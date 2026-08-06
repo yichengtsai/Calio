@@ -1,29 +1,66 @@
+// libs/auth.js
 import NextAuth from "next-auth"
 import { MongoDBAdapter } from "@auth/mongodb-adapter"
 import GoogleProvider from "next-auth/providers/google"
 import config from "@/config"
 import connectMongo from "./mongo"
 
+// 包一層,讓 linkAccount 在帳號已存在時改成"更新 token",
+// 而不是 NextAuth 預設的"直接跳過"。
+// 這樣以後不管誰改 scope,舊使用者只要重新走一次登入(prompt=consent)
+// 就能自動拿到新權限,不用手動去資料庫刪紀錄。
+function patchedAdapter(baseAdapter) {
+  return {
+    ...baseAdapter,
+    async linkAccount(account) {
+      const db = (await connectMongo).connection?.db // 依你實際 connectMongo 回傳型態調整
+      const existing = await baseAdapter.getAccount?.(
+        account.providerAccountId,
+        account.provider
+      )
+
+      if (!existing) {
+        return baseAdapter.linkAccount(account)
+      }
+
+      // 帳號已存在,改成 upsert 更新 token/scope
+      await db.collection("accounts").updateOne(
+        {
+          provider: account.provider,
+          providerAccountId: account.providerAccountId,
+        },
+        {
+          $set: {
+            access_token: account.access_token,
+            id_token: account.id_token,
+            expires_at: account.expires_at,
+            scope: account.scope,
+            token_type: account.token_type,
+            // refresh_token 只有 Google 有給才覆蓋,避免把舊的洗掉
+            ...(account.refresh_token
+              ? { refresh_token: account.refresh_token }
+              : {}),
+          },
+        }
+      )
+      return account
+    },
+  }
+}
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
-
-  // Set any random key in .env.local
   secret: process.env.NEXTAUTH_SECRET,
-
+  debug: true,
   providers: [
-    // 只留 Google 登入,Email/Magic Link 選項拿掉了
     ...(connectMongo
       ? [
           GoogleProvider({
-            // Follow the "Login with Google" tutorial to get your credentials
             clientId: process.env.GOOGLE_ID,
             clientSecret: process.env.GOOGLE_SECRET,
             authorization: {
               params: {
-                // openid/email/profile 是登入用的原本權限
-                // calendar.events 讓我們可以幫使用者建立/讀取行程,查衝突用的 calendar.readonly 已經包含在裡面
                 scope:
                   "openid email profile https://www.googleapis.com/auth/calendar.events",
-                // offline + consent 才拿得到 refresh_token,不然 access_token 一小時就過期
                 access_type: "offline",
                 prompt: "consent",
               },
@@ -41,12 +78,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         ]
       : []),
   ],
-
-  // New users will be saved in Database (MongoDB Atlas). Each user (model) has some fields like name, email, image, etc..
-  // Requires a MongoDB database. Set MONGODB_URI env variable.
-  // Learn more about the model type: https://authjs.dev/concepts/database-models
-  ...(connectMongo && { adapter: MongoDBAdapter(connectMongo) }),
-
+  ...(connectMongo && {
+    adapter: patchedAdapter(MongoDBAdapter(connectMongo)),
+  }),
   callbacks: {
     session: async ({ session, token }) => {
       if (session?.user && token.sub) {
@@ -55,12 +89,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       return session;
     },
   },
-  session: {
-    strategy: "jwt",
-  },
+  session: { strategy: "jwt" },
   theme: {
     brandColor: config.colors.main,
-    // 用本機/正式站都通用的相對路徑,不用依賴 config.domainName 是否已經正確設定
     logo: "/logo.png",
   },
 });

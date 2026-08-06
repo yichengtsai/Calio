@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { signIn } from "next-auth/react";
 import Link from "next/link";
 
 export default function AccountSettingsForm() {
@@ -226,12 +227,15 @@ export default function AccountSettingsForm() {
             </span>
           </div>
           {!plan.googleCalendarConnected && (
-            <Link
-              href="/api/auth/signin/google"
+            <button
+              type="button"
+              onClick={() =>
+                signIn("google", { callbackUrl: window.location.pathname })
+              }
               className="text-xs text-primary hover:underline inline-block"
             >
               Connect Google Calendar
-            </Link>
+            </button>
           )}
         </div>
       )}

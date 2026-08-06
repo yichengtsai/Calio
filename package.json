@@ -2,6 +2,9 @@
   "name": "ship-fast-code",
   "version": "0.1.0",
   "private": true,
+  "overrides": {
+    "@auth/core": "0.37.2"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
