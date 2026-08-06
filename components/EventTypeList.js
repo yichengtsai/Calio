@@ -2,11 +2,16 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import toast from "react-hot-toast";
+import ConfirmDialog from "./ConfirmDialog";
 
 export default function EventTypeList() {
   const [eventTypes, setEventTypes] = useState(null);
   const [error, setError] = useState(null);
   const [busyId, setBusyId] = useState(null);
+  const [confirmState, setConfirmState] = useState(null);
+  const [username, setUsername] = useState(null);
+  const [sharingId, setSharingId] = useState(null); // 哪一列的分享/QR 彈窗開著
 
   async function load() {
     try {
@@ -20,6 +25,11 @@ export default function EventTypeList() {
 
   useEffect(() => {
     load();
+    // 分享連結需要知道自己的 username,才能組出 /{username}/{slug} 的公開網址
+    fetch("/api/account")
+      .then((res) => res.json())
+      .then((data) => setUsername(data.username || null))
+      .catch(() => setUsername(null));
   }, []);
 
   async function toggleActive(eventType) {
@@ -36,14 +46,40 @@ export default function EventTypeList() {
     }
   }
 
-  async function handleDelete(eventType) {
-    if (!confirm(`Delete "${eventType.title}"? This can't be undone.`)) return;
+  function handleDelete(eventType) {
+    setConfirmState({
+      title: `Delete "${eventType.title}"?`,
+      description: "This can't be undone.",
+      confirmLabel: "Delete",
+      danger: true,
+      onConfirm: () => doDelete(eventType),
+    });
+  }
+
+  async function doDelete(eventType) {
     setBusyId(eventType.id);
     try {
       await fetch(`/api/event-types/${eventType.id}`, { method: "DELETE" });
+      toast.success("Deleted");
       await load();
     } finally {
       setBusyId(null);
+    }
+  }
+
+  function bookingUrl(slug) {
+    if (!username || typeof window === "undefined") return null;
+    return `${window.location.origin}/${username}/${slug}`;
+  }
+
+  async function handleCopyLink(slug) {
+    const url = bookingUrl(slug);
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("Link copied");
+    } catch (e) {
+      toast.error("Couldn't copy — copy it manually from the box below");
     }
   }
 
@@ -74,51 +110,109 @@ export default function EventTypeList() {
 
   return (
     <div className="space-y-3">
-      {eventTypes.map((et) => (
-        <div
-          key={et.id}
-          className={`flex items-center gap-4 rounded-xl border border-base-300 bg-base-200 px-5 py-4 transition-opacity ${
-            et.isActive ? "" : "opacity-50"
-          }`}
-        >
-          <span
-            className="w-2.5 h-2.5 rounded-full shrink-0"
-            style={{ backgroundColor: et.color }}
-          />
+      {eventTypes.map((et) => {
+        const url = bookingUrl(et.slug);
+        const isSharing = sharingId === et.id;
 
-          <div className="flex-1 min-w-0">
-            <p className="font-semibold text-sm truncate">{et.title}</p>
-            <p className="text-xs text-base-content/50">
-              {et.duration} min{et.location ? ` · ${et.location}` : ""} ·{" "}
-              {et.requiresApproval ? "Needs approval" : "Auto-confirm"}
-            </p>
+        return (
+          <div
+            key={et.id}
+            className={`rounded-xl border border-base-300 bg-base-200 px-5 py-4 transition-opacity ${
+              et.isActive ? "" : "opacity-50"
+            }`}
+          >
+            <div className="flex items-center gap-4">
+              <span
+                className="w-2.5 h-2.5 rounded-full shrink-0"
+                style={{ backgroundColor: et.color }}
+              />
+
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-sm truncate">{et.title}</p>
+                <p className="text-xs text-base-content/50">
+                  {et.duration} min{et.location ? ` · ${et.location}` : ""} ·{" "}
+                  {et.requiresApproval ? "Needs approval" : "Auto-confirm"}
+                </p>
+              </div>
+
+              <input
+                type="checkbox"
+                checked={et.isActive}
+                onChange={() => toggleActive(et)}
+                disabled={busyId === et.id}
+                className="toggle toggle-sm toggle-primary"
+              />
+
+              <button
+                type="button"
+                onClick={() => setSharingId(isSharing ? null : et.id)}
+                disabled={!url}
+                className="btn btn-ghost btn-xs text-base-content/60"
+              >
+                Share
+              </button>
+
+              <Link
+                href={`/dashboard/event-types/${et.id}/edit`}
+                className="btn btn-ghost btn-xs text-base-content/60"
+              >
+                Edit
+              </Link>
+
+              <button
+                type="button"
+                onClick={() => handleDelete(et)}
+                disabled={busyId === et.id}
+                className="btn btn-ghost btn-xs text-base-content/40 hover:text-error"
+              >
+                Delete
+              </button>
+            </div>
+
+            {isSharing && url && (
+              <div className="mt-3 pt-3 border-t border-base-300/60 flex items-center gap-4">
+                {/* 用免費的 QR code 產圖服務,不用額外裝套件;圖片內容只是這個公開頁面的網址,沒有任何隱私資料 */}
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(
+                    url
+                  )}`}
+                  alt={`QR code for ${et.title}`}
+                  width={96}
+                  height={96}
+                  className="rounded-lg border border-base-300 bg-base-100 shrink-0"
+                />
+                <div className="flex-1 min-w-0 space-y-2">
+                  <input
+                    readOnly
+                    value={url}
+                    onFocus={(e) => e.target.select()}
+                    className="input input-bordered input-sm w-full text-xs"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleCopyLink(et.slug)}
+                      className="btn btn-primary btn-xs"
+                    >
+                      Copy link
+                    </button>
+                    <a
+                      href={url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn btn-ghost btn-xs"
+                    >
+                      Open page
+                    </a>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
+        );
+      })}
 
-          <input
-            type="checkbox"
-            checked={et.isActive}
-            onChange={() => toggleActive(et)}
-            disabled={busyId === et.id}
-            className="toggle toggle-sm toggle-primary"
-          />
-
-          <Link
-            href={`/dashboard/event-types/${et.id}/edit`}
-            className="btn btn-ghost btn-xs text-base-content/60"
-          >
-            Edit
-          </Link>
-
-          <button
-            type="button"
-            onClick={() => handleDelete(et)}
-            disabled={busyId === et.id}
-            className="btn btn-ghost btn-xs text-base-content/40 hover:text-error"
-          >
-            Delete
-          </button>
-        </div>
-      ))}
+      <ConfirmDialog state={confirmState} onClose={() => setConfirmState(null)} />
     </div>
   );
 }

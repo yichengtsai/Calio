@@ -26,7 +26,14 @@ export default function RootLayout({ children }) {
 			data-theme="deepwork"
 			className={font.className}
 			suppressHydrationWarning
+			translate="no"
 		>
+			<head>
+				{/* 避免 Chrome / Google 翻譯外掛直接改寫頁面文字節點:它會把文字包進額外的 <font> 標籤,
+				    跟 React 自己記住的 DOM 結構對不上,之後 React 想更新/移除那些節點時就會噴
+				    "Failed to execute 'removeChild' on 'Node'"。這個 meta tag 請瀏覽器不要自動翻譯這頁。 */}
+				<meta name="google" content="notranslate" />
+			</head>
 			<body>
 				{/* 翻頁前就先套用使用者上次選的主題,避免畫面先閃一下錯的顏色再變回來 */}
 				<Script id="theme-init" strategy="beforeInteractive">

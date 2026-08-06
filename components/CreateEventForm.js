@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import toast from "react-hot-toast";
 
 const COLOR_PRESETS = ["#0ea5e9", "#6366f1", "#ef4444", "#22c55e", "#f59e0b", "#ec4899"];
 const REMINDER_PRESETS = [
@@ -165,6 +166,16 @@ export default function CreateEventForm({ eventId }) {
       }
 
       if (isEditing) {
+        if (data.changedFields?.length > 0) {
+          toast.success(
+            `Saved — ${data.changedFields.join(", ")} changed, ${data.emailsSent} participant${
+              data.emailsSent === 1 ? "" : "s"
+            } notified${data.emailsFailed > 0 ? ` (${data.emailsFailed} failed to send)` : ""}`,
+            { duration: 4500 }
+          );
+        } else {
+          toast.success("Saved — no changes visible to participants, so no email was sent");
+        }
         router.push("/dashboard/events");
         router.refresh();
         return;

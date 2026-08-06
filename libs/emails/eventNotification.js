@@ -136,6 +136,78 @@ export function buildEventReminderEmail(params) {
 }
 
 /**
+ * 行程細節被編輯後,寄給每位參與者的「已更新」通知信
+ * @param {Object} params
+ * @param {string} params.title
+ * @param {string} [params.description]
+ * @param {Date} params.startTime
+ * @param {Date} params.endTime
+ * @param {string} params.timezone
+ * @param {string} [params.location]
+ * @param {string} [params.meetingUrl]
+ * @param {string} params.organizerName
+ * @param {string} [params.participantName]
+ * @param {string} [params.confirmUrl]
+ * @param {string[]} params.changedFields - 人類看得懂的變更項目清單,例如 ["Time", "Location"]
+ */
+export function buildEventUpdateEmail(params) {
+  const {
+    title,
+    description,
+    startTime,
+    endTime,
+    timezone,
+    location,
+    meetingUrl,
+    organizerName,
+    participantName,
+    confirmUrl,
+    changedFields = [],
+  } = params;
+
+  const when = formatDateRange(startTime, endTime, timezone);
+  const safeName = escapeHtml(participantName);
+  const greeting = safeName ? `Hi ${safeName}` : "Hi there";
+  const meetingLink = safeUrl(meetingUrl);
+  const changedLabel = changedFields.length
+    ? changedFields.map((f) => escapeHtml(f)).join(", ")
+    : "Details";
+
+  const html = `
+  <div style="font-family: -apple-system, Segoe UI, Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 32px 24px; color: #1a1a1a;">
+    <p style="font-size: 14px; color: #b45309; margin: 0 0 4px; font-weight: 600;">Updated by ${escapeHtml(organizerName)} — ${changedLabel} changed</p>
+    <h1 style="font-size: 22px; margin: 0 0 20px; line-height: 1.4;">${escapeHtml(title)}</h1>
+
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+      <tr>
+        <td style="padding: 8px 0; color: #6b7280; font-size: 14px; width: 80px;">When</td>
+        <td style="padding: 8px 0; font-size: 14px; font-weight: 600;">${when}</td>
+      </tr>
+      ${location ? `<tr><td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Where</td><td style="padding: 8px 0; font-size: 14px;">${escapeHtml(location)}</td></tr>` : ""}
+      ${meetingLink ? `<tr><td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Meeting link</td><td style="padding: 8px 0; font-size: 14px;"><a href="${meetingLink}" style="color: #2563eb;">${meetingLink}</a></td></tr>` : ""}
+    </table>
+
+    ${description ? `<p style="font-size: 14px; line-height: 1.6; color: #374151; margin-bottom: 24px;">${escapeHtml(description)}</p>` : ""}
+
+    <p style="font-size: 14px; margin-bottom: 16px;">${greeting}, please check the ${changedLabel.toLowerCase()} above and let us know you're still good to attend:</p>
+
+    ${
+      confirmUrl
+        ? `<a href="${safeUrl(confirmUrl)}" style="display: inline-block; background: #111827; color: #ffffff; text-decoration: none; padding: 10px 20px; border-radius: 6px; font-size: 14px; font-weight: 600;">Confirm attendance</a>`
+        : ""
+    }
+
+    <p style="font-size: 12px; color: #9ca3af; margin-top: 32px;">This is an automated message — please don't reply to this email.</p>
+  </div>
+  `;
+
+  return {
+    subject: `Updated: ${title} (${when})`,
+    html,
+  };
+}
+
+/**
  * 取消行程時,寄給每位參與者的通知信
  */
 export function buildEventCancellationEmail(params) {

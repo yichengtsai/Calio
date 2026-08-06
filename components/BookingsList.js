@@ -1,12 +1,31 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import toast from "react-hot-toast";
+import ConfirmDialog from "./ConfirmDialog";
+
+function toLocalDateInput(date) {
+  const d = new Date(date);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function toLocalTimeInput(date) {
+  const d = new Date(date);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 export default function BookingsList() {
   const [bookings, setBookings] = useState(null);
   const [error, setError] = useState(null);
   const [busyId, setBusyId] = useState(null);
   const [tab, setTab] = useState("pending"); // pending | upcoming | past
+  const [confirmState, setConfirmState] = useState(null);
+  const [rescheduling, setRescheduling] = useState(null); // booking being rescheduled
+  const [rescheduleForm, setRescheduleForm] = useState({ date: "", startTime: "", endTime: "" });
+  const [isSavingReschedule, setIsSavingReschedule] = useState(false);
+  const [rescheduleError, setRescheduleError] = useState(null);
 
   async function load() {
     try {
@@ -32,7 +51,7 @@ export default function BookingsList() {
       });
       const data = await res.json();
       if (!res.ok) {
-        alert(data.error || "Something went wrong");
+        toast.error(data.error || "Something went wrong");
         return;
       }
       await load();
@@ -43,17 +62,80 @@ export default function BookingsList() {
 
   async function handleApprove(booking) {
     await updateStatus(booking, "confirmed");
+    toast.success("Approved");
   }
 
-  async function handleDecline(booking) {
-    if (!confirm(`Decline the request from ${booking.inviteeName}?`)) return;
-    await updateStatus(booking, "declined");
+  function handleDecline(booking) {
+    setConfirmState({
+      title: `Decline the request from ${booking.inviteeName}?`,
+      confirmLabel: "Decline",
+      danger: true,
+      onConfirm: async () => {
+        await updateStatus(booking, "declined");
+        toast.success("Declined");
+      },
+    });
   }
 
-  async function handleCancel(booking) {
-    if (!confirm(`Cancel the booking with ${booking.inviteeName}? They'll be notified by email.`))
-      return;
-    await updateStatus(booking, "cancelled");
+  function handleCancel(booking) {
+    setConfirmState({
+      title: `Cancel the booking with ${booking.inviteeName}?`,
+      description: "They'll be notified by email.",
+      confirmLabel: "Cancel booking",
+      danger: true,
+      onConfirm: async () => {
+        await updateStatus(booking, "cancelled");
+        toast.success("Cancelled — they've been notified");
+      },
+    });
+  }
+
+  function openReschedule(booking) {
+    setRescheduleError(null);
+    setRescheduleForm({
+      date: toLocalDateInput(booking.startTime),
+      startTime: toLocalTimeInput(booking.startTime),
+      endTime: toLocalTimeInput(booking.endTime),
+    });
+    setRescheduling(booking);
+  }
+
+  async function handleSaveReschedule(e) {
+    e.preventDefault();
+    if (!rescheduling) return;
+    setRescheduleError(null);
+
+    const startTime = new Date(
+      `${rescheduleForm.date}T${rescheduleForm.startTime}:00`
+    ).toISOString();
+    const endTime = new Date(`${rescheduleForm.date}T${rescheduleForm.endTime}:00`).toISOString();
+
+    setIsSavingReschedule(true);
+    try {
+      const res = await fetch(`/api/bookings/${rescheduling.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ startTime, endTime }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setRescheduleError(data.error || "Failed to reschedule");
+        return;
+      }
+
+      setRescheduling(null);
+      toast.success(
+        data.rescheduled
+          ? "Rescheduled — the guest has been notified by email"
+          : "No change — the time was already set to that"
+      );
+      await load();
+    } catch (err) {
+      setRescheduleError("Something went wrong. Please try again.");
+    } finally {
+      setIsSavingReschedule(false);
+    }
   }
 
   if (error) return <p className="text-sm text-error">{error}</p>;
@@ -165,14 +247,24 @@ export default function BookingsList() {
                 </div>
 
                 {tab === "upcoming" && (
-                  <button
-                    type="button"
-                    onClick={() => handleCancel(b)}
-                    disabled={busyId === b.id}
-                    className="btn btn-ghost btn-xs text-base-content/40 hover:text-error shrink-0"
-                  >
-                    Cancel
-                  </button>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => openReschedule(b)}
+                      disabled={busyId === b.id}
+                      className="btn btn-ghost btn-xs text-base-content/50 hover:text-primary"
+                    >
+                      Reschedule
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleCancel(b)}
+                      disabled={busyId === b.id}
+                      className="btn btn-ghost btn-xs text-base-content/40 hover:text-error"
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 )}
               </div>
 
@@ -200,6 +292,92 @@ export default function BookingsList() {
           ))}
         </div>
       )}
+
+      {rescheduling && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-opacity"
+          onClick={() => setRescheduling(null)}
+        >
+          <form
+            onSubmit={handleSaveReschedule}
+            className="bg-base-100 border border-base-300 rounded-2xl max-w-sm w-full p-6 space-y-4 animate-popup"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between">
+              <div>
+                <h2 className="font-bold text-lg">Reschedule</h2>
+                <p className="text-xs text-base-content/50">{rescheduling.inviteeName}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRescheduling(null)}
+                className="text-base-content/40 hover:text-base-content"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="text-xs text-base-content/50 -mt-2">
+              They&apos;ll get an email with the new time — this booking stays confirmed.
+            </p>
+
+            <div>
+              <label className="block text-sm font-medium text-base-content/80 mb-1">Date</label>
+              <input
+                type="date"
+                required
+                value={rescheduleForm.date}
+                onChange={(e) =>
+                  setRescheduleForm((f) => ({ ...f, date: e.target.value }))
+                }
+                className="input input-bordered input-sm w-full"
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="flex-1">
+                <label className="block text-sm font-medium text-base-content/80 mb-1">
+                  Start
+                </label>
+                <input
+                  type="time"
+                  required
+                  value={rescheduleForm.startTime}
+                  onChange={(e) =>
+                    setRescheduleForm((f) => ({ ...f, startTime: e.target.value }))
+                  }
+                  className="input input-bordered input-sm w-full"
+                />
+              </div>
+              <div className="flex-1">
+                <label className="block text-sm font-medium text-base-content/80 mb-1">
+                  End
+                </label>
+                <input
+                  type="time"
+                  required
+                  value={rescheduleForm.endTime}
+                  onChange={(e) =>
+                    setRescheduleForm((f) => ({ ...f, endTime: e.target.value }))
+                  }
+                  className="input input-bordered input-sm w-full"
+                />
+              </div>
+            </div>
+
+            {rescheduleError && <p className="text-sm text-error">{rescheduleError}</p>}
+
+            <button
+              type="submit"
+              disabled={isSavingReschedule}
+              className="btn btn-primary btn-sm w-full"
+            >
+              {isSavingReschedule ? "Saving…" : "Save new time"}
+            </button>
+          </form>
+        </div>
+      )}
+
+      <ConfirmDialog state={confirmState} onClose={() => setConfirmState(null)} />
     </div>
   );
 }

@@ -149,6 +149,46 @@ export function buildDeclinedEmail({ eventTitle, organizerName, startTime, endTi
 }
 
 /**
+ * 主辦人改了預約時間後,寄給預約人(invitee)的「已改期」通知信
+ */
+export function buildRescheduledEmail({
+  eventTitle,
+  organizerName,
+  previousStartTime,
+  previousEndTime,
+  startTime,
+  endTime,
+  timezone,
+  inviteeName,
+  cancelUrl,
+}) {
+  const was = formatWhen(previousStartTime, previousEndTime, timezone);
+  const now2 = formatWhen(startTime, endTime, timezone);
+
+  const html = wrapEmail(`
+    <p style="font-size: 14px; color: #b45309; margin: 0 0 4px; font-weight: 600;">Rescheduled by ${escapeHtml(organizerName)}</p>
+    <h1 style="font-size: 22px; margin: 0 0 20px; line-height: 1.4;">${escapeHtml(eventTitle)}</h1>
+
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+      <tr>
+        <td style="padding: 8px 0; color: #6b7280; font-size: 14px; width: 80px;">Was</td>
+        <td style="padding: 8px 0; font-size: 14px; text-decoration: line-through; color: #9ca3af;">${was}</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Now</td>
+        <td style="padding: 8px 0; font-size: 14px; font-weight: 600;">${now2}</td>
+      </tr>
+    </table>
+
+    <p style="font-size: 14px;">Hi ${escapeHtml(inviteeName)}, this booking has moved to a new time — it's still confirmed, no action needed.</p>
+
+    ${cancelUrl ? `<p style="font-size: 13px; margin-top: 20px;"><a href="${escapeHtml(cancelUrl)}" style="color: #6b7280;">Can't make the new time? Cancel here</a></p>` : ""}
+  `);
+
+  return { subject: `Rescheduled: ${eventTitle} (${now2})`, html };
+}
+
+/**
  * 給預約人(invitee)的取消通知信
  */
 export function buildCancellationEmail({

@@ -1,17 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-
-function dateToStr(date) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
-
-function isSameDay(a, b) {
-  return a.toDateString() === b.toDateString();
-}
+import TimezoneSelect from "@/components/TimezoneSelect";
+import {
+  addDaysToDateStr,
+  dateStrInTimezone,
+  formatTimezoneLabel,
+} from "@/libs/timezone";
 
 // 產生 .ics 檔內容,讓使用者可以把預約直接加進自己的行事曆 app
 function buildIcs({ title, description, location, startTime, endTime }) {
@@ -47,6 +42,51 @@ function downloadIcs(content, filename) {
   URL.revokeObjectURL(url);
 }
 
+// dateStr 是一個單純的日曆日期(不含時區),用 UTC 錨定來取星期幾 / 月份等顯示用文字,
+// 避免又牽扯進時區轉換造成日期跳動。
+function partsFromDateStr(dateStr) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return { y, m, d, anchor: new Date(Date.UTC(y, m - 1, d)) };
+}
+
+function weekdayShort(dateStr) {
+  return partsFromDateStr(dateStr).anchor.toLocaleDateString("en-US", {
+    weekday: "short",
+    timeZone: "UTC",
+  });
+}
+
+function dayOfMonth(dateStr) {
+  return partsFromDateStr(dateStr).d;
+}
+
+function monthYearLabel(dateStr) {
+  return partsFromDateStr(dateStr).anchor.toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+function formatSlotTime(iso, timeZone) {
+  return new Date(iso).toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone,
+  });
+}
+
+function formatSlotFullDate(iso, timeZone) {
+  return new Date(iso).toLocaleString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone,
+  });
+}
+
 function ClockIcon() {
   return (
     <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 shrink-0">
@@ -80,6 +120,8 @@ export default function BookingWidget({
   brandColor = "#6366f1",
 }) {
   const [mounted, setMounted] = useState(false);
+  // 預約人自己選的時區,一開始自動偵測瀏覽器時區,但可以手動換
+  const [timezone, setTimezone] = useState(null);
   const [dayOffset, setDayOffset] = useState(0);
   const [slots, setSlots] = useState([]);
   const [isLoadingSlots, setIsLoadingSlots] = useState(true);
@@ -92,43 +134,70 @@ export default function BookingWidget({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState(null);
 
-  const viewerTimezone = useMemo(
-    () => Intl.DateTimeFormat().resolvedOptions().timeZone,
-    []
-  );
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  // 14 天可選範圍,做成一排可以直接點的日期條
-  const visibleDays = useMemo(
-    () => [...Array(14)].map((_, i) => {
-      const d = new Date(today);
-      d.setDate(today.getDate() + i);
-      return d;
-    }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    []
-  );
-
-  const selectedDate = visibleDays[dayOffset];
-  const dateStr = dateToStr(selectedDate);
-
   useEffect(() => {
     setMounted(true);
+    setTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone);
   }, []);
 
+  function handleTimezoneChange(tz) {
+    setTimezone(tz);
+    // 換時區之後,原本選到的第幾天可能對不上了(日曆日跳動),回到今天最保險
+    setDayOffset(0);
+    setSelectedSlot(null);
+  }
+
+  // 「今天」是以預約人選的時區為準,不是伺服器或瀏覽器預設值
+  const todayStr = useMemo(
+    () => dateStrInTimezone(new Date(), timezone || "UTC"),
+    [timezone]
+  );
+
+  // 14 天可選範圍,做成一排可以直接點的日期條(單純日曆日期字串,例如 "2026-08-03")
+  const visibleDays = useMemo(
+    () => [...Array(14)].map((_, i) => addDaysToDateStr(todayStr, i)),
+    [todayStr]
+  );
+
+  const dateStr = visibleDays[dayOffset];
+
   useEffect(() => {
+    if (!timezone) return;
     let cancelled = false;
+    const controller = new AbortController();
 
     async function loadSlots() {
       setIsLoadingSlots(true);
       try {
-        const res = await fetch(
-          `/api/public/availability?username=${encodeURIComponent(username)}&slug=${encodeURIComponent(slug)}&date=${dateStr}`
+        // 主辦人後台是用「他自己的時區」在算一天的起訖,跟預約人選的時區不一定對齊
+        // (時差可能讓同一個時刻落在不同的日曆日)。所以查詢日期的前一天、當天、
+        // 後一天都抓,再依「預約人選的時區」把時段過濾回真正對應到的那一天。
+        const candidateDates = [
+          addDaysToDateStr(dateStr, -1),
+          dateStr,
+          addDaysToDateStr(dateStr, 1),
+        ];
+
+        const results = await Promise.all(
+          candidateDates.map((d) =>
+            fetch(
+              `/api/public/availability?username=${encodeURIComponent(username)}&slug=${encodeURIComponent(slug)}&date=${d}`,
+              { signal: controller.signal }
+            )
+              .then((res) => (res.ok ? res.json() : { slots: [] }))
+              .catch(() => ({ slots: [] }))
+          )
         );
-        const data = await res.json();
-        if (!cancelled) setSlots(res.ok ? data.slots || [] : []);
+
+        const merged = new Map();
+        for (const data of results) {
+          for (const iso of data.slots || []) merged.set(iso, iso);
+        }
+
+        const filtered = [...merged.values()]
+          .filter((iso) => dateStrInTimezone(new Date(iso), timezone) === dateStr)
+          .sort((a, b) => new Date(a) - new Date(b));
+
+        if (!cancelled) setSlots(filtered);
       } catch (e) {
         if (!cancelled) setSlots([]);
       } finally {
@@ -139,8 +208,9 @@ export default function BookingWidget({
     loadSlots();
     return () => {
       cancelled = true;
+      controller.abort();
     };
-  }, [dateStr, username, slug]);
+  }, [dateStr, username, slug, timezone]);
 
   async function handleConfirm(e) {
     e.preventDefault();
@@ -158,7 +228,7 @@ export default function BookingWidget({
           inviteeName: name,
           inviteeEmail: email,
           inviteeNotes: notes || undefined,
-          inviteeTimezone: viewerTimezone,
+          inviteeTimezone: timezone,
         }),
       });
       const data = await res.json();
@@ -212,6 +282,7 @@ export default function BookingWidget({
           </div>
         </div>
         <div className="p-6 space-y-3">
+          <div className="h-10 rounded-lg bg-base-300 animate-pulse" />
           <div className="h-14 rounded-lg bg-base-300 animate-pulse" />
           <div className="grid grid-cols-3 gap-2">
             {[...Array(6)].map((_, i) => (
@@ -232,10 +303,12 @@ export default function BookingWidget({
           <div className="w-12 h-12 rounded-full bg-success/15 text-success flex items-center justify-center mx-auto text-2xl animate-popup">
             ✓
           </div>
-          <h2 className="text-xl font-bold">You&apos;re booked!</h2>
-          <p className="text-base-content/60 text-sm">
-            A confirmation email is on its way to {email}.
-          </p>
+          <div>
+            <h2 className="text-lg font-bold">You&apos;re booked!</h2>
+            <p className="text-sm text-base-content/60 mt-1">
+              A confirmation has been sent to {email}
+            </p>
+          </div>
         </div>
 
         <div className="p-6 space-y-4">
@@ -247,17 +320,14 @@ export default function BookingWidget({
             <div>
               <p className="font-semibold text-sm">{eventType.title}</p>
               <p className="text-sm text-base-content/60">
-                {new Date(selectedSlot).toLocaleString("en-US", {
-                  weekday: "long",
-                  month: "long",
-                  day: "numeric",
-                  hour: "numeric",
-                  minute: "2-digit",
-                })}{" "}
-                –{" "}
-                {end.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                {formatSlotFullDate(selectedSlot, timezone)}
+                {" – "}
+                {formatSlotTime(end.toISOString(), timezone)}
               </p>
-              <p className="text-xs text-base-content/40 mt-0.5">{viewerTimezone}</p>
+              <p className="text-xs text-base-content/40 mt-0.5 flex items-center gap-1">
+                <ClockIcon />
+                {formatTimezoneLabel(timezone)}
+              </p>
             </div>
           </div>
 
@@ -270,7 +340,7 @@ export default function BookingWidget({
   }
 
   return (
-    <div className="rounded-2xl border border-base-300 bg-base-200 overflow-hidden">
+    <div className="rounded-2xl border border-base-300 bg-base-200 overflow-hidden shadow-sm">
       {/* Header */}
       <div className="h-1.5" style={{ backgroundColor: eventType.color }} />
       <div className="px-6 py-6 border-b border-base-300">
@@ -316,42 +386,52 @@ export default function BookingWidget({
 
       {step === "select-time" && (
         <div key="select-time" className="p-6 space-y-5 animate-opacity">
-          {/* 14天可橫向滑動的日期條 */}
-          <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
-            {visibleDays.map((day, i) => {
-              const isSelected = i === dayOffset;
-              const isToday = isSameDay(day, today);
-              return (
-                <button
-                  key={day.toISOString()}
-                  type="button"
-                  onClick={() => setDayOffset(i)}
-                  style={isSelected ? { backgroundColor: brandColor, color: "white" } : undefined}
-                  className={`flex flex-col items-center justify-center w-12 h-14 rounded-lg shrink-0 transition-all hover:scale-105 active:scale-95 ${
-                    isSelected ? "" : "bg-base-300/50 hover:bg-base-300 text-base-content"
-                  }`}
-                >
-                  <span className="text-[10px] uppercase opacity-70">
-                    {day.toLocaleDateString("en-US", { weekday: "short" })}
-                  </span>
-                  <span className="text-sm font-semibold">
-                    {day.getDate()}
-                    {isToday && !isSelected && (
-                      <span
-                        className="block w-1 h-1 rounded-full mx-auto mt-0.5"
-                        style={{ backgroundColor: brandColor }}
-                      />
-                    )}
-                  </span>
-                </button>
-              );
-            })}
+          {/* 預約人自己選時區:所有日期、時段都會依這裡自動換算顯示 */}
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wide text-base-content/40 mb-1.5">
+              Your timezone
+            </label>
+            <TimezoneSelect value={timezone} onChange={handleTimezoneChange} />
           </div>
 
-          {/* 時區提示,避免對方誤會時間是主辦人時區 */}
-          <p className="text-xs text-base-content/40 flex items-center gap-1">
-            Times shown in your timezone ({viewerTimezone})
-          </p>
+          <div>
+            <p className="text-sm font-semibold mb-2">{monthYearLabel(dateStr)}</p>
+
+            {/* 14天可橫向滑動的日期條 */}
+            <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
+              {visibleDays.map((day, i) => {
+                const isSelected = i === dayOffset;
+                const isToday = day === todayStr;
+                return (
+                  <button
+                    key={day}
+                    type="button"
+                    onClick={() => {
+                      setDayOffset(i);
+                      setSelectedSlot(null);
+                    }}
+                    style={isSelected ? { backgroundColor: brandColor, color: "white" } : undefined}
+                    className={`flex flex-col items-center justify-center w-12 h-14 rounded-lg shrink-0 transition-all hover:scale-105 active:scale-95 ${
+                      isSelected
+                        ? "shadow-md"
+                        : "bg-base-300/50 hover:bg-base-300 text-base-content"
+                    }`}
+                  >
+                    <span className="text-[10px] uppercase opacity-70">{weekdayShort(day)}</span>
+                    <span className="text-sm font-semibold">
+                      {dayOfMonth(day)}
+                      {isToday && !isSelected && (
+                        <span
+                          className="block w-1 h-1 rounded-full mx-auto mt-0.5"
+                          style={{ backgroundColor: brandColor }}
+                        />
+                      )}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
           {isLoadingSlots ? (
             <div className="grid grid-cols-3 gap-2">
@@ -392,10 +472,7 @@ export default function BookingWidget({
                   onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = brandColor)}
                   onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "")}
                 >
-                  {new Date(slot).toLocaleTimeString("en-US", {
-                    hour: "numeric",
-                    minute: "2-digit",
-                  })}
+                  {formatSlotTime(slot, timezone)}
                 </button>
               ))}
             </div>
@@ -414,16 +491,11 @@ export default function BookingWidget({
           </button>
 
           <div className="rounded-lg bg-base-300/40 px-4 py-3">
-            <p className="text-sm font-semibold">
-              {new Date(selectedSlot).toLocaleString("en-US", {
-                weekday: "long",
-                month: "long",
-                day: "numeric",
-                hour: "numeric",
-                minute: "2-digit",
-              })}
+            <p className="text-sm font-semibold">{formatSlotFullDate(selectedSlot, timezone)}</p>
+            <p className="text-xs text-base-content/40 mt-0.5 flex items-center gap-1">
+              <ClockIcon />
+              {formatTimezoneLabel(timezone)}
             </p>
-            <p className="text-xs text-base-content/40 mt-0.5">{viewerTimezone}</p>
           </div>
 
           <div>

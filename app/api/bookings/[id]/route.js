@@ -71,6 +71,10 @@ export async function PATCH(req, { params }) {
   }
   await booking.save();
 
+  // 這幾封都是寄給「預約人」看的,時間要用他當初預約時選的時區,
+  // 而不是主辦人的時區,不然對方看到信會覺得時間對不上
+  const inviteeTimezone = booking.inviteeTimezone || timezone;
+
   let emailPayload = null;
   if (status === "confirmed") {
     emailPayload = buildInviteeConfirmationEmail({
@@ -78,7 +82,7 @@ export async function PATCH(req, { params }) {
       organizerName: organizer?.name || organizer?.email,
       startTime: booking.startTime,
       endTime: booking.endTime,
-      timezone,
+      timezone: inviteeTimezone,
       inviteeName: booking.inviteeName,
     });
   } else if (status === "declined") {
@@ -87,7 +91,7 @@ export async function PATCH(req, { params }) {
       organizerName: organizer?.name || organizer?.email,
       startTime: booking.startTime,
       endTime: booking.endTime,
-      timezone,
+      timezone: inviteeTimezone,
       inviteeName: booking.inviteeName,
     });
   } else if (status === "cancelled") {
@@ -96,7 +100,7 @@ export async function PATCH(req, { params }) {
       organizerName: organizer?.name || organizer?.email,
       startTime: booking.startTime,
       endTime: booking.endTime,
-      timezone,
+      timezone: inviteeTimezone,
       inviteeName: booking.inviteeName,
     });
   }

@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import toast from "react-hot-toast";
+import ConfirmDialog from "./ConfirmDialog";
 
 const DEFAULT_HOUR_START = 8;
 const DEFAULT_HOUR_END = 18;
@@ -23,6 +25,13 @@ function addDays(date, days) {
 
 function isSameDay(a, b) {
   return a.toDateString() === b.toDateString();
+}
+
+function dateToStr(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }
 
 function timeStrToHour(str) {
@@ -69,6 +78,8 @@ export default function CalendarView() {
   });
   const [isSavingBlock, setIsSavingBlock] = useState(false);
   const [blockError, setBlockError] = useState(null);
+  const [confirmState, setConfirmState] = useState(null);
+  const [dragCreate, setDragCreate] = useState(null); // { day, startHour, currentHour } 拖曳建立忙碌時段用
 
   useEffect(() => {
     setMounted(true);
@@ -92,9 +103,17 @@ export default function CalendarView() {
       .catch(() => setAvailability([]));
   }, []);
 
-  async function handleCancel(item) {
-    if (!confirm(`Cancel "${item.title}"? This will notify the other person by email.`)) return;
+  function handleCancel(item) {
+    setConfirmState({
+      title: `Cancel "${item.title}"?`,
+      description: "This will notify the other person by email.",
+      confirmLabel: "Cancel this",
+      danger: true,
+      onConfirm: () => doCancel(item),
+    });
+  }
 
+  async function doCancel(item) {
     setIsCancelling(true);
     try {
       const endpoint =
@@ -105,6 +124,7 @@ export default function CalendarView() {
         body: JSON.stringify({ status: "cancelled" }),
       });
       setSelectedItem(null);
+      toast.success("Cancelled — the other person has been notified");
       await loadSchedule();
     } finally {
       setIsCancelling(false);
@@ -121,19 +141,27 @@ export default function CalendarView() {
       });
       const data = await res.json();
       if (!res.ok) {
-        alert(data.error || "Failed to approve this booking");
+        toast.error(data.error || "Failed to approve this booking");
         return;
       }
       setSelectedItem(null);
+      toast.success("Approved");
       await loadSchedule();
     } finally {
       setIsCancelling(false);
     }
   }
 
-  async function handleDecline(item) {
-    if (!confirm(`Decline the request from ${item.inviteeName}?`)) return;
+  function handleDecline(item) {
+    setConfirmState({
+      title: `Decline the request from ${item.inviteeName}?`,
+      confirmLabel: "Decline",
+      danger: true,
+      onConfirm: () => doDecline(item),
+    });
+  }
 
+  async function doDecline(item) {
     setIsCancelling(true);
     try {
       await fetch(`/api/bookings/${item.id}`, {
@@ -142,6 +170,7 @@ export default function CalendarView() {
         body: JSON.stringify({ status: "declined" }),
       });
       setSelectedItem(null);
+      toast.success("Declined");
       await loadSchedule();
     } finally {
       setIsCancelling(false);
@@ -181,6 +210,7 @@ export default function CalendarView() {
 
       setShowBlockForm(false);
       setBlockForm({ title: "", date: "", startTime: "09:00", endTime: "10:00", notes: "" });
+      toast.success("Added to your calendar");
       await loadSchedule();
     } catch (err) {
       setBlockError("Something went wrong. Please try again.");
@@ -189,13 +219,21 @@ export default function CalendarView() {
     }
   }
 
-  async function handleDeleteBlock(item) {
-    if (!confirm(`Remove "${item.title}" from your calendar?`)) return;
+  function handleDeleteBlock(item) {
+    setConfirmState({
+      title: `Remove "${item.title}" from your calendar?`,
+      confirmLabel: "Remove",
+      danger: true,
+      onConfirm: () => doDeleteBlock(item),
+    });
+  }
 
+  async function doDeleteBlock(item) {
     setIsCancelling(true);
     try {
       await fetch(`/api/blocks/${item.id}`, { method: "DELETE" });
       setSelectedItem(null);
+      toast.success("Removed");
       await loadSchedule();
     } finally {
       setIsCancelling(false);
@@ -255,18 +293,72 @@ export default function CalendarView() {
     };
   }, [items, now]);
 
+  const hourBounds = useMemo(() => {
+    if (!items) return { hourStart: DEFAULT_HOUR_START, hourEnd: DEFAULT_HOUR_END };
+    const itemHours = items.flatMap((item) => [
+      new Date(item.startTime).getHours(),
+      new Date(item.endTime).getHours() + (new Date(item.endTime).getMinutes() > 0 ? 1 : 0),
+    ]);
+    return {
+      hourStart: Math.min(DEFAULT_HOUR_START, ...itemHours),
+      hourEnd: Math.max(DEFAULT_HOUR_END, ...itemHours),
+    };
+  }, [items]);
+
+  // 拖曳中,追蹤滑鼠移動/放開,算出對應的時間(15 分鐘吸附),放開後把 Add 表單帶好時間打開
+  useEffect(() => {
+    if (!dragCreate) return;
+
+    function clampHour(h) {
+      return Math.min(hourBounds.hourEnd, Math.max(hourBounds.hourStart, h));
+    }
+
+    function handleMouseMove(e) {
+      const hour = clampHour(hourBounds.hourStart + (e.clientY - dragCreate.top) / HOUR_HEIGHT);
+      setDragCreate((prev) => (prev ? { ...prev, currentHour: hour } : prev));
+    }
+
+    function handleMouseUp() {
+      setDragCreate((prev) => {
+        if (!prev) return null;
+        const lo = Math.min(prev.startHour, prev.currentHour);
+        const hi = Math.max(prev.startHour, prev.currentHour);
+        if (hi - lo >= 0.2) {
+          // 拖出至少 ~12 分鐘才算數,避免單純點擊被誤判成拖曳
+          const snap = (h) => {
+            const s = Math.round(h * 4) / 4;
+            const hh = Math.floor(s);
+            const mm = Math.round((s - hh) * 60);
+            return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+          };
+          setBlockForm((f) => ({
+            ...f,
+            date: dateToStr(prev.day),
+            startTime: snap(lo),
+            endTime: snap(hi),
+          }));
+          setShowBlockForm(true);
+        }
+        return null;
+      });
+    }
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dragCreate?.top, dragCreate?.day, hourBounds.hourStart, hourBounds.hourEnd]);
+
   if (error) return <p className="text-sm text-error">{error}</p>;
 
   if (!mounted || items === null) {
     return <div className="h-96 rounded-2xl bg-base-200 animate-pulse" />;
   }
 
-  const itemHours = items.flatMap((item) => [
-    new Date(item.startTime).getHours(),
-    new Date(item.endTime).getHours() + (new Date(item.endTime).getMinutes() > 0 ? 1 : 0),
-  ]);
-  const hourStart = Math.min(DEFAULT_HOUR_START, ...itemHours);
-  const hourEnd = Math.max(DEFAULT_HOUR_END, ...itemHours);
+  const { hourStart, hourEnd } = hourBounds;
   const totalHours = hourEnd - hourStart;
 
   function itemsForDay(day) {
@@ -275,6 +367,14 @@ export default function CalendarView() {
 
   function availabilityForDay(day) {
     return availability.filter((rule) => rule.dayOfWeek === day.getDay());
+  }
+
+  function handleDayMouseDown(e, day) {
+    if (e.button !== 0) return; // 只認滑鼠左鍵
+    if (e.target.closest("button")) return; // 點到既有行程色塊就不要觸發拖曳建立
+    const rect = e.currentTarget.getBoundingClientRect();
+    const hour = hourStart + (e.clientY - rect.top) / HOUR_HEIGHT;
+    setDragCreate({ day, top: rect.top, startHour: hour, currentHour: hour });
   }
 
   function blockGeometry(startDate, endDate) {
@@ -362,6 +462,9 @@ export default function CalendarView() {
           <span className="text-sm font-bold text-base-content/80">
             {weekStart.toLocaleDateString("en-US", { month: "long", year: "numeric" })}
           </span>
+          <span className="hidden md:inline text-[11px] text-base-content/40">
+            Tip: drag on the grid to block off time
+          </span>
           <button
             type="button"
             onClick={() => setShowBlockForm(true)}
@@ -426,7 +529,8 @@ export default function CalendarView() {
               return (
                 <div
                   key={day.toISOString()}
-                  className={`relative border-l ${
+                  onMouseDown={(e) => handleDayMouseDown(e, day)}
+                  className={`relative border-l select-none cursor-crosshair ${
                     isToday
                       ? "bg-primary/[0.04] border-l-[3px] border-l-primary"
                       : isWeekend
@@ -435,6 +539,17 @@ export default function CalendarView() {
                   }`}
                   style={{ height: `${totalHours * HOUR_HEIGHT}px` }}
                 >
+                  {/* 拖曳中的預覽色塊,放開滑鼠後會用這段時間帶出 Add 表單 */}
+                  {dragCreate && isSameDay(dragCreate.day, day) && (
+                    <div
+                      className="absolute left-0.5 right-0.5 rounded-md bg-primary/25 border-2 border-dashed border-primary pointer-events-none z-30"
+                      style={{
+                        top: `${(Math.min(dragCreate.startHour, dragCreate.currentHour) - hourStart) * HOUR_HEIGHT}px`,
+                        height: `${Math.max(4, Math.abs(dragCreate.currentHour - dragCreate.startHour) * HOUR_HEIGHT)}px`,
+                      }}
+                    />
+                  )}
+
                   {/* 可預約時段:淺色底 + 虛線邊框,取代原本幾乎看不見的深綠色 */}
                   {dayRules.map((rule, i) => (
                     <div
@@ -746,6 +861,8 @@ export default function CalendarView() {
           </form>
         </div>
       )}
+
+      <ConfirmDialog state={confirmState} onClose={() => setConfirmState(null)} />
     </div>
   );
 }

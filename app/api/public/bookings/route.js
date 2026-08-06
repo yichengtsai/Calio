@@ -133,6 +133,8 @@ export async function POST(req) {
     });
 
     const timezone = user.timezone || "Asia/Taipei";
+    // 寄給預約人自己的信,時間要用他預約當下選的時區顯示,不是主辦人的時區
+    const inviteeDisplayTimezone = inviteeTimezone || timezone;
     const reviewUrl = `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/bookings`;
     // 讓對方不用登入就能取消自己這筆預約的連結,靠 cancelToken 驗證身份
     const cancelUrl = `${process.env.NEXT_PUBLIC_APP_URL}/booking/${booking.id}/cancel?token=${booking.cancelToken}`;
@@ -148,7 +150,7 @@ export async function POST(req) {
             organizerName: user.name || user.email,
             startTime: start,
             endTime: end,
-            timezone,
+            timezone: inviteeDisplayTimezone,
             inviteeName,
             cancelUrl,
           }),
@@ -180,7 +182,7 @@ export async function POST(req) {
             organizerName: user.name || user.email,
             startTime: start,
             endTime: end,
-            timezone,
+            timezone: inviteeDisplayTimezone,
             location: eventType.location,
             inviteeName,
             cancelUrl,

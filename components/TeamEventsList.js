@@ -2,11 +2,14 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import toast from "react-hot-toast";
+import ConfirmDialog from "./ConfirmDialog";
 
 export default function TeamEventsList() {
   const [events, setEvents] = useState(null);
   const [error, setError] = useState(null);
   const [busyId, setBusyId] = useState(null);
+  const [confirmState, setConfirmState] = useState(null);
 
   async function load() {
     try {
@@ -22,10 +25,17 @@ export default function TeamEventsList() {
     load();
   }, []);
 
-  async function handleCancel(event) {
-    if (!confirm(`Cancel "${event.title}"? All participants will be notified by email.`))
-      return;
+  function handleCancel(event) {
+    setConfirmState({
+      title: `Cancel "${event.title}"?`,
+      description: "All participants will be notified by email.",
+      confirmLabel: "Cancel event",
+      danger: true,
+      onConfirm: () => doCancel(event),
+    });
+  }
 
+  async function doCancel(event) {
     setBusyId(event.id);
     try {
       await fetch(`/api/events/${event.id}`, {
@@ -33,6 +43,7 @@ export default function TeamEventsList() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: "cancelled" }),
       });
+      toast.success("Cancelled — participants have been notified");
       await load();
     } finally {
       setBusyId(null);
@@ -120,6 +131,8 @@ export default function TeamEventsList() {
           )}
         </div>
       ))}
+
+      <ConfirmDialog state={confirmState} onClose={() => setConfirmState(null)} />
     </div>
   );
 }
