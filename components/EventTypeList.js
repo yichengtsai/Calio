@@ -102,6 +102,13 @@ export default function EventTypeList() {
             className="toggle toggle-sm toggle-primary"
           />
 
+          <Link
+            href={`/dashboard/event-types/${et.id}/edit`}
+            className="btn btn-ghost btn-xs text-base-content/60"
+          >
+            Edit
+          </Link>
+
           <button
             type="button"
             onClick={() => handleDelete(et)}

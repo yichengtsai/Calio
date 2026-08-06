@@ -17,13 +17,22 @@ const userSchema = mongoose.Schema(
     image: {
       type: String,
     },
-    // 預約頁網址用,例如 yourapp.com/johnlin 裡的 "johnlin"
+    // 預約頁網址用,例如 yourapp.com/johnlin-x7q 裡的完整 "johnlin-x7q"。
+    // 固定帶有 3 碼隨機尾巴(由 usernameBase 產生),避免別人單憑姓名/公司名猜到網址就亂預約。
     username: {
       type: String,
       trim: true,
       lowercase: true,
       unique: true,
       sparse: true, // 允許還沒設定 username 的舊帳號存在(值是 null)
+      match: [/^[a-z0-9-]+$/, "Username can only contain lowercase letters, numbers, and hyphens"],
+    },
+    // 使用者自己在 Settings 填的「好記」的那一段,不含隨機尾巴。只用來讓使用者編輯時看得懂自己填了什麼,
+    // 實際網址一律用上面的 username(含隨機尾巴)。
+    usernameBase: {
+      type: String,
+      trim: true,
+      lowercase: true,
       match: [/^[a-z0-9-]+$/, "Username can only contain lowercase letters, numbers, and hyphens"],
     },
     // 顯示在預約頁上的自介

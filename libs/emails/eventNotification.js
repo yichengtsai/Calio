@@ -81,6 +81,61 @@ export function buildEventNotificationEmail(params) {
 }
 
 /**
+ * 開始前 N 分鐘寄給每位參與者的提醒信
+ */
+export function buildEventReminderEmail(params) {
+  const {
+    title,
+    startTime,
+    endTime,
+    timezone,
+    location,
+    meetingUrl,
+    organizerName,
+    participantName,
+    minutesBefore,
+  } = params;
+
+  const when = formatDateRange(startTime, endTime, timezone);
+  const safeName = escapeHtml(participantName);
+  const greeting = safeName ? `Hi ${safeName}` : "Hi there";
+  const meetingLink = safeUrl(meetingUrl);
+  const inLabel =
+    minutesBefore % 60 === 0 && minutesBefore >= 60
+      ? `${minutesBefore / 60} hour${minutesBefore / 60 === 1 ? "" : "s"}`
+      : `${minutesBefore} minutes`;
+
+  const html = `
+  <div style="font-family: -apple-system, Segoe UI, Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 32px 24px; color: #1a1a1a;">
+    <p style="font-size: 14px; color: #6b7280; margin: 0 0 4px;">Starting in ${inLabel}</p>
+    <h1 style="font-size: 22px; margin: 0 0 20px; line-height: 1.4;">${escapeHtml(title)}</h1>
+
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+      <tr>
+        <td style="padding: 8px 0; color: #6b7280; font-size: 14px; width: 80px;">When</td>
+        <td style="padding: 8px 0; font-size: 14px; font-weight: 600;">${when}</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Organizer</td>
+        <td style="padding: 8px 0; font-size: 14px;">${escapeHtml(organizerName)}</td>
+      </tr>
+      ${location ? `<tr><td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Where</td><td style="padding: 8px 0; font-size: 14px;">${escapeHtml(location)}</td></tr>` : ""}
+      ${meetingLink ? `<tr><td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Meeting link</td><td style="padding: 8px 0; font-size: 14px;"><a href="${meetingLink}" style="color: #2563eb;">${meetingLink}</a></td></tr>` : ""}
+    </table>
+
+    <p style="font-size: 14px;">${greeting}, just a heads up — this is coming up soon.</p>
+
+    <p style="font-size: 12px; color: #9ca3af; margin-top: 32px;">This is an automated message — please don't reply to this email.</p>
+  </div>
+  `;
+
+  return {
+    subject: `Reminder: ${title} in ${inLabel}`,
+    html,
+  };
+}
+
+/**
  * 取消行程時,寄給每位參與者的通知信
  */
 export function buildEventCancellationEmail(params) {

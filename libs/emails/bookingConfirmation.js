@@ -218,6 +218,47 @@ export function buildOrganizerAutoConfirmedEmail({
 }
 
 /**
+ * 開始前 N 分鐘寄給預約人(invitee)的提醒信
+ */
+export function buildBookingReminderEmail({
+  eventTitle,
+  organizerName,
+  startTime,
+  endTime,
+  timezone,
+  location,
+  inviteeName,
+  minutesBefore,
+}) {
+  const when = formatWhen(startTime, endTime, timezone);
+  const inLabel =
+    minutesBefore % 60 === 0 && minutesBefore >= 60
+      ? `${minutesBefore / 60} hour${minutesBefore / 60 === 1 ? "" : "s"}`
+      : `${minutesBefore} minutes`;
+
+  const html = wrapEmail(`
+    <p style="font-size: 14px; color: #6b7280; margin: 0 0 4px;">Starting in ${inLabel}</p>
+    <h1 style="font-size: 22px; margin: 0 0 20px; line-height: 1.4;">${escapeHtml(eventTitle)}</h1>
+
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+      <tr>
+        <td style="padding: 8px 0; color: #6b7280; font-size: 14px; width: 80px;">When</td>
+        <td style="padding: 8px 0; font-size: 14px; font-weight: 600;">${when}</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">With</td>
+        <td style="padding: 8px 0; font-size: 14px;">${escapeHtml(organizerName)}</td>
+      </tr>
+      ${location ? `<tr><td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Where</td><td style="padding: 8px 0; font-size: 14px;">${escapeHtml(location)}</td></tr>` : ""}
+    </table>
+
+    <p style="font-size: 14px;">Hi ${escapeHtml(inviteeName)}, just a heads up — this is coming up soon.</p>
+  `);
+
+  return { subject: `Reminder: ${eventTitle} in ${inLabel}`, html };
+}
+
+/**
  * 待審核逾時沒被主辦人處理,自動判定過期時寄給預約人的信
  */
 export function buildExpiredEmail({ eventTitle, organizerName, startTime, endTime, timezone, inviteeName }) {

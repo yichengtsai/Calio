@@ -6,7 +6,8 @@ export default function AccountSettingsForm() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [name, setName] = useState("");
-  const [username, setUsername] = useState("");
+  const [usernameBase, setUsernameBase] = useState("");
+  const [publicUsername, setPublicUsername] = useState(""); // 含隨機尾碼的完整值,唯讀顯示用
   const [bio, setBio] = useState("");
   const [image, setImage] = useState("");
   const [brandColor, setBrandColor] = useState("#6366f1");
@@ -31,7 +32,8 @@ export default function AccountSettingsForm() {
         const res = await fetch("/api/account");
         const data = await res.json();
         setName(data.name || "");
-        setUsername(data.username || "");
+        setUsernameBase(data.usernameBase || "");
+        setPublicUsername(data.username || "");
         setBio(data.bio || "");
         setImage(data.image || "");
         setBrandColor(data.brandColor || "#6366f1");
@@ -63,7 +65,7 @@ export default function AccountSettingsForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name,
-          username,
+          username: usernameBase,
           bio,
           brandColor,
           logoUrl,
@@ -84,6 +86,8 @@ export default function AccountSettingsForm() {
         return;
       }
 
+      setUsernameBase(data.usernameBase || "");
+      setPublicUsername(data.username || "");
       setResult({ type: "success", message: "Saved" });
     } catch (e) {
       setResult({ type: "error", message: "Something went wrong. Please try again." });
@@ -93,7 +97,7 @@ export default function AccountSettingsForm() {
   }
 
   function handleCopy() {
-    navigator.clipboard.writeText(`${origin}/${username}`);
+    navigator.clipboard.writeText(`${origin}/${publicUsername}`);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
@@ -167,12 +171,12 @@ export default function AccountSettingsForm() {
   return (
     <div className="max-w-lg space-y-6">
       {/* Public URL preview */}
-      {username && (
+      {publicUsername && (
         <div className="rounded-xl border border-primary/30 bg-primary/5 px-4 py-3 flex items-center justify-between gap-3">
           <div className="min-w-0">
             <p className="text-xs text-base-content/50">Your booking page</p>
             <p className="text-sm font-medium truncate">
-              {origin}/{username}
+              {origin}/{publicUsername}
             </p>
           </div>
           <button type="button" onClick={handleCopy} className="btn btn-sm btn-outline shrink-0">
@@ -223,13 +227,18 @@ export default function AccountSettingsForm() {
               <input
                 type="text"
                 required
-                value={username}
-                onChange={(e) => setUsername(e.target.value.toLowerCase())}
+                value={usernameBase}
+                onChange={(e) => setUsernameBase(e.target.value.toLowerCase())}
                 className="input input-bordered w-full"
                 placeholder="janedoe"
                 pattern="[a-z0-9-]{3,30}"
               />
             </div>
+            <p className="text-xs text-base-content/40 mt-1">
+              We add a short random code to the end (e.g. {usernameBase || "janedoe"}-x7q) so
+              people can&apos;t guess your page and book random slots. Changing this generates a
+              new code, which breaks any links you&apos;ve already shared.
+            </p>
           </div>
 
           <div>

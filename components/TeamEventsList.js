@@ -101,14 +101,22 @@ export default function TeamEventsList() {
           </div>
 
           {e.status !== "cancelled" && (
-            <button
-              type="button"
-              onClick={() => handleCancel(e)}
-              disabled={busyId === e.id}
-              className="btn btn-ghost btn-xs text-base-content/40 hover:text-error shrink-0"
-            >
-              Cancel
-            </button>
+            <div className="flex items-center gap-1 shrink-0">
+              <Link
+                href={`/dashboard/events/${e.id}/edit`}
+                className="btn btn-ghost btn-xs text-base-content/60"
+              >
+                Edit
+              </Link>
+              <button
+                type="button"
+                onClick={() => handleCancel(e)}
+                disabled={busyId === e.id}
+                className="btn btn-ghost btn-xs text-base-content/40 hover:text-error"
+              >
+                Cancel
+              </button>
+            </div>
           )}
         </div>
       ))}

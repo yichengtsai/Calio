@@ -43,7 +43,19 @@ export async function POST(req) {
   }
 
   const body = await req.json();
-  const { title, description, duration, location, locationType, color, requiresApproval, bufferMinutes, minimumNoticeMinutes, policyNotes } = body;
+  const {
+    title,
+    description,
+    duration,
+    location,
+    locationType,
+    color,
+    requiresApproval,
+    bufferMinutes,
+    minimumNoticeMinutes,
+    reminderMinutesBefore,
+    policyNotes,
+  } = body;
 
   if (!title || !duration) {
     return NextResponse.json(
@@ -89,6 +101,8 @@ export async function POST(req) {
     requiresApproval: requiresApproval !== undefined ? requiresApproval : true,
     bufferMinutes: Number(bufferMinutes) || 0,
     minimumNoticeMinutes: Number(minimumNoticeMinutes) || 0,
+    reminderMinutesBefore:
+      reminderMinutesBefore !== undefined ? Number(reminderMinutesBefore) || 0 : 30,
     policyNotes: policyNotes || undefined,
   });
 

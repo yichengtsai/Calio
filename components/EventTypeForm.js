@@ -1,14 +1,24 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 const DURATION_PRESETS = [15, 30, 45, 60];
 const COLOR_PRESETS = ["#6366f1", "#ef4444", "#22c55e", "#f59e0b", "#0ea5e9", "#ec4899"];
+const REMINDER_PRESETS = [
+  { label: "No reminder", value: 0 },
+  { label: "10 minutes before", value: 10 },
+  { label: "30 minutes before", value: 30 },
+  { label: "1 hour before", value: 60 },
+  { label: "1 day before", value: 1440 },
+];
 
-export default function EventTypeForm() {
+// eventTypeId 有帶值 = 編輯既有的活動類型;沒帶 = 建立新的(原本的行為)
+export default function EventTypeForm({ eventTypeId }) {
   const router = useRouter();
+  const isEditing = Boolean(eventTypeId);
 
+  const [isLoading, setIsLoading] = useState(isEditing);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [duration, setDuration] = useState(30);
@@ -18,9 +28,47 @@ export default function EventTypeForm() {
   const [requiresApproval, setRequiresApproval] = useState(true);
   const [bufferMinutes, setBufferMinutes] = useState(0);
   const [minimumNoticeHours, setMinimumNoticeHours] = useState(0);
+  const [reminderMinutesBefore, setReminderMinutesBefore] = useState(30);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState(null);
+
+  // 編輯模式:先把現有資料抓回來灌進表單
+  useEffect(() => {
+    if (!isEditing) return;
+
+    async function load() {
+      try {
+        const res = await fetch(`/api/event-types/${eventTypeId}`);
+        const data = await res.json();
+        if (!res.ok) {
+          setError(data.error || "Failed to load event type");
+          return;
+        }
+        const et = data.eventType;
+        setTitle(et.title || "");
+        setDescription(et.description || "");
+        if (DURATION_PRESETS.includes(et.duration)) {
+          setDuration(et.duration);
+        } else {
+          setCustomDuration(String(et.duration));
+        }
+        setLocation(et.location || "");
+        setColor(et.color || COLOR_PRESETS[0]);
+        setRequiresApproval(et.requiresApproval !== false);
+        setBufferMinutes(et.bufferMinutes || 0);
+        setMinimumNoticeHours((et.minimumNoticeMinutes || 0) / 60);
+        setReminderMinutesBefore(
+          et.reminderMinutesBefore === undefined ? 30 : et.reminderMinutesBefore
+        );
+      } catch (e) {
+        setError("Failed to load event type");
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    load();
+  }, [isEditing, eventTypeId]);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -28,25 +76,29 @@ export default function EventTypeForm() {
     setError(null);
 
     try {
-      const res = await fetch("/api/event-types", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title,
-          description: description || undefined,
-          duration: customDuration || duration,
-          location: location || undefined,
-          color,
-          requiresApproval,
-          bufferMinutes,
-          minimumNoticeMinutes: minimumNoticeHours * 60,
-        }),
-      });
+      const res = await fetch(
+        isEditing ? `/api/event-types/${eventTypeId}` : "/api/event-types",
+        {
+          method: isEditing ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title,
+            description: description || undefined,
+            duration: customDuration || duration,
+            location: location || undefined,
+            color,
+            requiresApproval,
+            bufferMinutes,
+            minimumNoticeMinutes: minimumNoticeHours * 60,
+            reminderMinutesBefore,
+          }),
+        }
+      );
 
       const data = await res.json();
 
       if (!res.ok) {
-        setError(data.error || "Failed to create event type");
+        setError(data.error || `Failed to ${isEditing ? "save" : "create"} event type`);
         return;
       }
 
@@ -57,6 +109,16 @@ export default function EventTypeForm() {
     } finally {
       setIsSubmitting(false);
     }
+  }
+
+  if (isLoading) {
+    return (
+      <div className="max-w-lg space-y-3">
+        {[...Array(4)].map((_, i) => (
+          <div key={i} className="h-14 rounded-xl bg-base-200 animate-pulse" />
+        ))}
+      </div>
+    );
   }
 
   return (
@@ -218,13 +280,39 @@ export default function EventTypeForm() {
               How far in advance people must book — no last-minute requests.
             </p>
           </div>
+
+          <div>
+            <label className="block text-sm font-medium text-base-content/80 mb-1">
+              Email reminder
+            </label>
+            <select
+              value={reminderMinutesBefore}
+              onChange={(e) => setReminderMinutesBefore(Number(e.target.value))}
+              className="select select-bordered select-sm w-full max-w-[200px]"
+            >
+              {REMINDER_PRESETS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-base-content/40 mt-1">
+              Sends both people an email before confirmed bookings of this type start.
+            </p>
+          </div>
         </div>
       </details>
 
       {error && <p className="text-sm text-error">{error}</p>}
 
       <button type="submit" disabled={isSubmitting} className="btn btn-primary">
-        {isSubmitting ? "Creating…" : "Create event type"}
+        {isSubmitting
+          ? isEditing
+            ? "Saving…"
+            : "Creating…"
+          : isEditing
+          ? "Save changes"
+          : "Create event type"}
       </button>
     </form>
   );

@@ -40,6 +40,8 @@ const bookingSchema = new mongoose.Schema(
     respondedAt: { type: Date }, // 主辦人同意或拒絕的時間
     cancelledAt: { type: Date },
     cancelReason: { type: String, trim: true },
+    // 提醒信寄出的時間戳記,寄過就不會再寄第二次(每筆預約只寄一次提醒)
+    reminderSentAt: { type: Date },
   },
   { timestamps: true, toJSON: { virtuals: true } }
 );

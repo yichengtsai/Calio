@@ -25,6 +25,8 @@ const eventTypeSchema = new mongoose.Schema(
     requiresApproval: { type: Boolean, default: true }, // true=有人預約先變pending要你Approve;false=送出就直接確認
     bufferMinutes: { type: Number, default: 0, min: 0 }, // 每個已確認行程前後留的緩衝時間(分鐘)
     minimumNoticeMinutes: { type: Number, default: 0, min: 0 }, // 最少要提前多久才能預約(分鐘)
+    // 開始前幾分鐘寄一次提醒信給雙方,0 = 不寄提醒信
+    reminderMinutesBefore: { type: Number, default: 30, min: 0 },
   },
   { timestamps: true, toJSON: { virtuals: true } }
 );

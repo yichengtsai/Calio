@@ -37,6 +37,10 @@ const eventSchema = new mongoose.Schema(
       required: true,
     },
     googleEventId: { type: String }, // 對應到使用者 Google Calendar 上的事件 id,方便之後更新/刪除同步
+    // 開始前幾分鐘寄一次提醒信給所有參與者,0 = 不寄提醒信
+    reminderMinutesBefore: { type: Number, default: 30, min: 0 },
+    // 提醒信寄出的時間戳記,寄過就不會再寄第二次
+    reminderSentAt: { type: Date },
     participants: [participantSchema],
   },
   {

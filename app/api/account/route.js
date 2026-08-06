@@ -30,6 +30,17 @@ const RESERVED_USERNAMES = [
   "terms",
 ];
 
+// 產生 3 碼隨機亂碼(小寫字母+數字),接在使用者填的 base 後面組成完整 username。
+// 目的是讓別人不能單憑姓名/公司名猜到預約頁網址就亂槍打鳥送預約請求。
+function randomSuffix(length = 3) {
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  let out = "";
+  for (let i = 0; i < length; i++) {
+    out += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return out;
+}
+
 export async function GET() {
   const session = await auth();
   if (!session?.user?.id) {
@@ -41,6 +52,8 @@ export async function GET() {
 
   return NextResponse.json({
     name: user?.name || "",
+    // usernameBase 是編輯輸入框用的「好記」名稱;username 是含隨機尾碼的完整值,只用來顯示/複製網址
+    usernameBase: user?.usernameBase || "",
     username: user?.username || "",
     bio: user?.bio || "",
     image: user?.image || "",
@@ -69,6 +82,8 @@ export async function PATCH(req) {
 
   await connectMongo();
 
+  const currentUser = await User.findById(session.user.id);
+
   const updates = {};
 
   if (name !== undefined) {
@@ -78,10 +93,13 @@ export async function PATCH(req) {
     updates.name = name.trim();
   }
 
+  // 這裡的 `username` 其實是使用者填的「好記」那段(base),不是最終網址。
+  // 真正的 username 一律是 `${base}-${隨機3碼}`,只有 base 真的變了才會重新產生亂碼,
+  // 不然每次存設定都換網址,之前分享出去的連結會全部失效。
   if (username !== undefined) {
-    const normalized = username.trim().toLowerCase();
+    const normalizedBase = username.trim().toLowerCase();
 
-    if (!/^[a-z0-9-]{3,30}$/.test(normalized)) {
+    if (!/^[a-z0-9-]{3,30}$/.test(normalizedBase)) {
       return NextResponse.json(
         {
           error:
@@ -91,25 +109,36 @@ export async function PATCH(req) {
       );
     }
 
-    if (RESERVED_USERNAMES.includes(normalized)) {
+    if (RESERVED_USERNAMES.includes(normalizedBase)) {
       return NextResponse.json(
         { error: "This username is reserved, please choose another" },
         { status: 400 }
       );
     }
 
-    const existing = await User.findOne({
-      username: normalized,
-      _id: { $ne: session.user.id },
-    });
-    if (existing) {
-      return NextResponse.json(
-        { error: "This username is already taken" },
-        { status: 409 }
-      );
-    }
+    const baseUnchanged =
+      currentUser?.usernameBase === normalizedBase && Boolean(currentUser?.username);
 
-    updates.username = normalized;
+    if (!baseUnchanged) {
+      let candidate;
+      let attempts = 0;
+      do {
+        candidate = `${normalizedBase}-${randomSuffix()}`;
+        attempts += 1;
+        // 3 碼亂碼空間是 36^3 = 46656 種組合,撞到的機率很低,但保險起見還是重抽,
+        // 抽太多次抽不到就拉長亂碼長度,避免無窮迴圈卡住整個請求。
+      } while (
+        (await User.exists({ username: candidate, _id: { $ne: session.user.id } })) &&
+        attempts < 20
+      );
+
+      if (attempts >= 20) {
+        candidate = `${normalizedBase}-${randomSuffix(6)}`;
+      }
+
+      updates.username = candidate;
+      updates.usernameBase = normalizedBase;
+    }
   }
 
   if (bio !== undefined) {
@@ -217,6 +246,7 @@ export async function PATCH(req) {
 
   return NextResponse.json({
     name: user.name,
+    usernameBase: user.usernameBase,
     username: user.username,
     bio: user.bio,
     image: user.image,

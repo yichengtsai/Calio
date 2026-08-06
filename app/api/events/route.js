@@ -29,6 +29,7 @@ export async function POST(req) {
     meetingUrl,
     color,
     participants,
+    reminderMinutesBefore,
     ignoreConflicts, // 使用者已經看過衝突警告,選擇「還是要建立」時前端會帶這個 true
   } = body;
 
@@ -81,6 +82,8 @@ export async function POST(req) {
     location,
     meetingUrl: meetingUrl || undefined,
     color: color || undefined,
+    reminderMinutesBefore:
+      reminderMinutesBefore !== undefined ? Number(reminderMinutesBefore) || 0 : 30,
     organizer: session.user.id,
     participants: participants
       .filter((p) => p.email)
