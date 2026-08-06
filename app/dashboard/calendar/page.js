@@ -1,16 +1,7 @@
-import CalendarView from "@/components/CalendarView";
+import { redirect } from "next/navigation";
 
-export default function CalendarPage() {
-  return (
-    <section className="space-y-8">
-      <div className="space-y-2">
-        <h1 className="text-2xl md:text-3xl font-extrabold">My Calendar</h1>
-        <p className="text-base-content/60">
-          A weekly view of everything on your schedule.
-        </p>
-      </div>
-
-      <CalendarView />
-    </section>
-  );
+// Calendar 現在是首頁(/dashboard),這裡保留舊路徑做轉址,
+// 避免使用者書籤或別處連結指到 /dashboard/calendar 時變成 404。
+export default function CalendarPageRedirect() {
+  redirect("/dashboard");
 }

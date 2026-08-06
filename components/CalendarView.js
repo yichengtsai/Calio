@@ -17,6 +17,19 @@ function startOfWeek(date) {
   return d;
 }
 
+function startOfDay(date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+// 產生月曆格子用的 42 天(6 週 x 7 天),從包含 1 號那週的週日開始,
+// 這樣月頭月尾露出的前後月份日期才會補滿整個矩形網格
+function monthGridDays(monthDate) {
+  const gridStart = startOfWeek(new Date(monthDate.getFullYear(), monthDate.getMonth(), 1));
+  return [...Array(42)].map((_, i) => addDays(gridStart, i));
+}
+
 function addDays(date, days) {
   const d = new Date(date);
   d.setDate(d.getDate() + days);
@@ -64,7 +77,12 @@ export default function CalendarView() {
   const [items, setItems] = useState(null);
   const [availability, setAvailability] = useState([]);
   const [error, setError] = useState(null);
+  const [view, setView] = useState("week"); // "day" | "week" | "month" | "year"
+  // 每種顯示方式各自記住自己的位置,切換 view 時不會跳掉之前瀏覽到哪裡
+  const [dayOffset, setDayOffset] = useState(0);
   const [weekOffset, setWeekOffset] = useState(0);
+  const [monthOffset, setMonthOffset] = useState(0);
+  const [yearOffset, setYearOffset] = useState(0);
   const [now, setNow] = useState(new Date());
   const [selectedItem, setSelectedItem] = useState(null);
   const [isCancelling, setIsCancelling] = useState(false);
@@ -245,11 +263,60 @@ export default function CalendarView() {
     return () => clearInterval(timer);
   }, []);
 
+  const dayViewDate = useMemo(() => addDays(startOfDay(new Date()), dayOffset), [dayOffset]);
   const weekStart = useMemo(
     () => addDays(startOfWeek(new Date()), weekOffset * 7),
     [weekOffset]
   );
-  const days = useMemo(() => [...Array(7)].map((_, i) => addDays(weekStart, i)), [weekStart]);
+  const monthDate = useMemo(() => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth() + monthOffset, 1);
+  }, [monthOffset]);
+  const yearDate = useMemo(() => {
+    const d = new Date();
+    return new Date(d.getFullYear() + yearOffset, 0, 1);
+  }, [yearOffset]);
+
+  // day/week 共用同一份時間格線,只是天數不同(1 天 vs 7 天)
+  const days = useMemo(() => {
+    if (view === "day") return [dayViewDate];
+    return [...Array(7)].map((_, i) => addDays(weekStart, i));
+  }, [view, dayViewDate, weekStart]);
+
+  function goToPrev() {
+    if (view === "day") setDayOffset((o) => o - 1);
+    else if (view === "week") setWeekOffset((o) => o - 1);
+    else if (view === "month") setMonthOffset((o) => o - 1);
+    else setYearOffset((o) => o - 1);
+  }
+
+  function goToNext() {
+    if (view === "day") setDayOffset((o) => o + 1);
+    else if (view === "week") setWeekOffset((o) => o + 1);
+    else if (view === "month") setMonthOffset((o) => o + 1);
+    else setYearOffset((o) => o + 1);
+  }
+
+  function goToToday() {
+    if (view === "day") setDayOffset(0);
+    else if (view === "week") setWeekOffset(0);
+    else if (view === "month") setMonthOffset(0);
+    else setYearOffset(0);
+  }
+
+  // 從月曆/年曆點某一天或某個月,跳去對應的天/月檢視,並記住那個位置
+  function jumpToDay(day) {
+    const diffDays = Math.round((startOfDay(day) - startOfDay(new Date())) / 86400000);
+    setDayOffset(diffDays);
+    setView("day");
+  }
+
+  function jumpToMonth(m) {
+    const base = new Date();
+    const diffMonths = (m.getFullYear() - base.getFullYear()) * 12 + (m.getMonth() - base.getMonth());
+    setMonthOffset(diffMonths);
+    setView("month");
+  }
 
   const stats = useMemo(() => {
     if (!items) return null;
@@ -438,33 +505,54 @@ export default function CalendarView() {
         </div>
       </div>
 
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setWeekOffset((w) => w - 1)}
-            className="btn btn-ghost btn-sm"
-          >
+          <button type="button" onClick={goToPrev} className="btn btn-ghost btn-sm">
             ← Prev
           </button>
-          <button type="button" onClick={() => setWeekOffset(0)} className="btn btn-ghost btn-sm">
+          <button type="button" onClick={goToToday} className="btn btn-ghost btn-sm">
             Today
           </button>
-          <button
-            type="button"
-            onClick={() => setWeekOffset((w) => w + 1)}
-            className="btn btn-ghost btn-sm"
-          >
+          <button type="button" onClick={goToNext} className="btn btn-ghost btn-sm">
             Next →
           </button>
+
+          {/* Day / Week / Month / Year 切換 */}
+          <div className="join ml-2">
+            {["day", "week", "month", "year"].map((v) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setView(v)}
+                className={`join-item btn btn-sm capitalize ${
+                  view === v ? "btn-primary" : "btn-ghost"
+                }`}
+              >
+                {v}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="flex items-center gap-3">
           <span className="text-sm font-bold text-base-content/80">
-            {weekStart.toLocaleDateString("en-US", { month: "long", year: "numeric" })}
+            {view === "day"
+              ? dayViewDate.toLocaleDateString("en-US", {
+                  weekday: "long",
+                  month: "long",
+                  day: "numeric",
+                  year: "numeric",
+                })
+              : view === "week"
+                ? weekStart.toLocaleDateString("en-US", { month: "long", year: "numeric" })
+                : view === "month"
+                  ? monthDate.toLocaleDateString("en-US", { month: "long", year: "numeric" })
+                  : yearDate.getFullYear()}
           </span>
-          <span className="hidden md:inline text-[11px] text-base-content/40">
-            Tip: drag on the grid to block off time
-          </span>
+          {(view === "day" || view === "week") && (
+            <span className="hidden md:inline text-[11px] text-base-content/40">
+              Tip: drag on the grid to block off time
+            </span>
+          )}
           <button
             type="button"
             onClick={() => setShowBlockForm(true)}
@@ -475,13 +563,125 @@ export default function CalendarView() {
         </div>
       </div>
 
+      {view === "month" ? (
+        <div className="rounded-2xl border border-base-300 bg-base-200 overflow-hidden animate-opacity">
+          <div className="grid grid-cols-7 border-b border-base-300">
+            {DAY_LABELS.map((label) => (
+              <div
+                key={label}
+                className="px-2 py-2 text-center text-xs font-medium text-base-content/50"
+              >
+                {label}
+              </div>
+            ))}
+          </div>
+          <div className="grid grid-cols-7">
+            {monthGridDays(monthDate).map((day) => {
+              const inMonth = day.getMonth() === monthDate.getMonth();
+              const dayItems = itemsForDay(day);
+              const isToday = isSameDay(day, now);
+              return (
+                <button
+                  type="button"
+                  key={day.toISOString()}
+                  onClick={() => jumpToDay(day)}
+                  className={`min-h-[92px] border-r border-b border-base-300 p-1.5 text-left flex flex-col gap-1 transition-colors hover:bg-base-300/40 ${
+                    inMonth ? "" : "opacity-40"
+                  } ${isToday ? "bg-primary/10" : ""}`}
+                >
+                  <span className={`text-xs font-semibold ${isToday ? "text-primary" : ""}`}>
+                    {day.getDate()}
+                  </span>
+                  <div className="space-y-0.5 overflow-hidden">
+                    {dayItems.slice(0, 3).map((item) => (
+                      <p
+                        key={item.id}
+                        className="truncate text-[10px] rounded px-1 py-0.5"
+                        style={{
+                          backgroundColor: hexToRgba(item.color, 0.15),
+                          color: item.color,
+                        }}
+                      >
+                        {item.title}
+                      </p>
+                    ))}
+                    {dayItems.length > 3 && (
+                      <p className="text-[10px] text-base-content/40">
+                        +{dayItems.length - 3} more
+                      </p>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : view === "year" ? (
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 animate-opacity">
+          {[...Array(12)].map((_, m) => {
+            const monthForCell = new Date(yearDate.getFullYear(), m, 1);
+            const monthItemCount = items.filter((item) => {
+              const d = new Date(item.startTime);
+              return (
+                d.getFullYear() === monthForCell.getFullYear() &&
+                d.getMonth() === monthForCell.getMonth()
+              );
+            }).length;
+
+            return (
+              <button
+                type="button"
+                key={m}
+                onClick={() => jumpToMonth(monthForCell)}
+                className="rounded-xl border border-base-300 bg-base-200 p-3 text-left hover:border-primary/50 transition-colors"
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm font-bold">
+                    {monthForCell.toLocaleDateString("en-US", { month: "long" })}
+                  </p>
+                  {monthItemCount > 0 && (
+                    <span className="text-[10px] text-base-content/40">{monthItemCount}</span>
+                  )}
+                </div>
+                <div className="grid grid-cols-7 gap-0.5">
+                  {monthGridDays(monthForCell).map((day) => {
+                    const inMonth = day.getMonth() === monthForCell.getMonth();
+                    const hasItems = inMonth && itemsForDay(day).length > 0;
+                    const isToday = isSameDay(day, now);
+                    return (
+                      <span
+                        key={day.toISOString()}
+                        className={`text-[8px] w-4 h-4 flex items-center justify-center rounded-full ${
+                          !inMonth
+                            ? "text-base-content/20"
+                            : isToday
+                              ? "bg-primary text-primary-content font-bold"
+                              : hasItems
+                                ? "bg-primary/20 font-medium"
+                                : "text-base-content/60"
+                        }`}
+                      >
+                        {day.getDate()}
+                      </span>
+                    );
+                  })}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      ) : (
       <div
-        key={weekStart.toISOString()}
+        key={days[0]?.toISOString()}
         className="rounded-2xl border border-base-300 bg-base-200 overflow-x-auto animate-opacity"
       >
-        <div className="min-w-[720px]">
+        <div className={days.length === 1 ? "min-w-[320px]" : "min-w-[720px]"}>
           {/* 日期標頭 */}
-          <div className="grid grid-cols-[56px_repeat(7,1fr)] border-b border-base-300">
+          <div
+            className={`grid border-b border-base-300 ${
+              days.length === 1 ? "grid-cols-[56px_1fr]" : "grid-cols-[56px_repeat(7,1fr)]"
+            }`}
+          >
             <div />
             {days.map((day) => {
               const isToday = isSameDay(day, now);
@@ -507,7 +707,11 @@ export default function CalendarView() {
           </div>
 
           {/* 時間格線 + 事件色塊 */}
-          <div className="grid grid-cols-[56px_repeat(7,1fr)]">
+          <div
+            className={`grid ${
+              days.length === 1 ? "grid-cols-[56px_1fr]" : "grid-cols-[56px_repeat(7,1fr)]"
+            }`}
+          >
             <div>
               {[...Array(totalHours)].map((_, i) => (
                 <div
@@ -643,6 +847,7 @@ export default function CalendarView() {
           </div>
         </div>
       </div>
+      )}
 
       {selectedItem && (
         <div
@@ -730,7 +935,11 @@ export default function CalendarView() {
               </div>
             )}
 
-            {selectedItem.source === "block" ? (
+            {selectedItem.source === "google" ? (
+              <p className="text-xs text-base-content/40 text-center">
+                Synced from Google Calendar — manage it there.
+              </p>
+            ) : selectedItem.source === "block" ? (
               <button
                 type="button"
                 onClick={() => handleDeleteBlock(selectedItem)}

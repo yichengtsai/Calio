@@ -47,7 +47,7 @@ export default function TodayScheduleList({ groups, timezone }) {
       ))}
 
       <Link
-        href="/dashboard/calendar"
+        href="/dashboard"
         className="text-sm text-primary hover:underline inline-flex items-center gap-1"
       >
         View full calendar →
@@ -136,7 +136,7 @@ export default function TodayScheduleList({ groups, timezone }) {
                   ? "/dashboard/bookings"
                   : selected.source === "event"
                     ? "/dashboard/events"
-                    : "/dashboard/calendar"
+                    : "/dashboard"
               }
               className="btn btn-outline btn-sm w-full"
             >

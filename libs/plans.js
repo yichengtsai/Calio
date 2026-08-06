@@ -14,6 +14,14 @@ export function canUseGoogleCalendarSync(user) {
 }
 
 /**
+ * 這個使用者能不能用時間分析儀表板(月趨勢、Event Type 排名、取消率等)。
+ * 跟 Google Calendar 同步用同一條規則:訂閱中(Stripe webhook 設的 hasAccess)就能用。
+ */
+export function canUseInsights(user) {
+  return Boolean(user?.hasAccess);
+}
+
+/**
  * 這個使用者還能不能再新增一個 event type。
  * @param {Object} user
  * @param {number} currentCount 使用者目前已有的 event type 數量

@@ -8,9 +8,9 @@ const SECTIONS = [
   {
     label: "Main",
     items: [
-      { name: "Overview", href: "/dashboard" },
-      { name: "Calendar", href: "/dashboard/calendar" },
+      { name: "Calendar", href: "/dashboard" },
       { name: "Bookings", href: "/dashboard/bookings", badgeKey: "pending" },
+      { name: "Insights", href: "/dashboard/insights" },
     ],
   },
   {
@@ -23,7 +23,10 @@ const SECTIONS = [
   },
   {
     label: "Other",
-    items: [{ name: "Settings", href: "/dashboard/settings" }],
+    items: [
+      { name: "Guide", href: "/dashboard/guide" },
+      { name: "Settings", href: "/dashboard/settings" },
+    ],
   },
 ];
 

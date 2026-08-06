@@ -145,6 +145,45 @@ export async function pushEventToGoogleCalendar(userId, event) {
 }
 
 /**
+ * 單向拉取:讀出使用者 Google Calendar 主行事曆上,落在指定時間範圍內的事件。
+ * 用來讓「直接在 Google Calendar 上新增的行程」也能顯示在 Calio 的日曆頁裡。
+ * 回傳 [] 代表沒連結 Google Calendar 或查詢失敗,不中斷主流程。
+ *
+ * 注意:這裡刻意不處理分頁(pageToken)——freebusy 用途的顯示時間範圍通常不會
+ * 超過 Google 單頁回傳上限(預設 250 筆),先求簡單堪用,之後真的遇到量大再補分頁。
+ */
+export async function listGoogleCalendarEvents(userId, timeMin, timeMax) {
+  const calendar = await getGoogleCalendarClient(userId);
+  if (!calendar) return [];
+
+  try {
+    const res = await calendar.events.list({
+      calendarId: "primary",
+      timeMin: timeMin.toISOString(),
+      timeMax: timeMax.toISOString(),
+      singleEvents: true, // 展開重複事件(recurring event)成一筆一筆,不然只會拿到主事件
+      orderBy: "startTime",
+      maxResults: 250,
+    });
+
+    return (res.data.items || [])
+      // 全天事件(只有 date,沒有 dateTime)、被使用者標記「free」的事件先跳過,
+      // 不然全天行程會把整個日曆版面撐爆
+      .filter((e) => e.start?.dateTime && e.end?.dateTime && e.status !== "cancelled")
+      .map((e) => ({
+        googleEventId: e.id,
+        title: e.summary || "(No title)",
+        startTime: new Date(e.start.dateTime),
+        endTime: new Date(e.end.dateTime),
+        location: e.location || null,
+      }));
+  } catch (e) {
+    console.error("Failed to list Google Calendar events:", e.message);
+    return [];
+  }
+}
+
+/**
  * 改期/編輯時同步更新 Google Calendar 上已存在的事件(靠先前存的 googleEventId)。
  * 如果找不到那個事件(可能被使用者自己在 Google Calendar 裡刪掉了),就當作沒有,
  * 回傳 null,呼叫端可以自行決定要不要退回成「重新建立一筆新的」。失敗不中斷主流程。
