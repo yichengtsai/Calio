@@ -69,6 +69,15 @@ export async function getGoogleCalendarClient(userId) {
 }
 
 /**
+ * 檢查使用者是否已經連結 Google Calendar(有 refresh_token)。
+ * 給前端顯示連結狀態用,不會真的打 Google API。
+ */
+export async function isGoogleCalendarConnected(userId) {
+  const account = await getGoogleAccount(userId);
+  return Boolean(account?.refresh_token);
+}
+
+/**
  * 用 Google 的 Free/Busy API 查詢這段時間使用者的 Google Calendar 是否已經有事情。
  * 回傳 { checked: boolean, conflicts: Array<{start, end}> }
  * checked = false 代表使用者沒有連結 Google Calendar,無法檢查(不視為衝突)
@@ -132,5 +141,66 @@ export async function pushEventToGoogleCalendar(userId, event) {
   } catch (e) {
     console.error("Failed to push event to Google Calendar:", e.message);
     return null;
+  }
+}
+
+/**
+ * 改期/編輯時同步更新 Google Calendar 上已存在的事件(靠先前存的 googleEventId)。
+ * 如果找不到那個事件(可能被使用者自己在 Google Calendar 裡刪掉了),就當作沒有,
+ * 回傳 null,呼叫端可以自行決定要不要退回成「重新建立一筆新的」。失敗不中斷主流程。
+ */
+export async function updateGoogleCalendarEvent(userId, googleEventId, event) {
+  const calendar = await getGoogleCalendarClient(userId);
+  if (!calendar || !googleEventId) return null;
+
+  try {
+    const res = await calendar.events.patch({
+      calendarId: "primary",
+      eventId: googleEventId,
+      requestBody: {
+        summary: event.title,
+        description: event.description || undefined,
+        location: event.location || undefined,
+        start: {
+          dateTime: event.startTime.toISOString(),
+          timeZone: event.timezone,
+        },
+        end: {
+          dateTime: event.endTime.toISOString(),
+          timeZone: event.timezone,
+        },
+      },
+      sendUpdates: "none",
+    });
+
+    return res.data.id || null;
+  } catch (e) {
+    // 404/410 代表那筆事件在 Google 那邊已經不存在了(例如使用者自己刪掉),
+    // 這種情況回傳 null,讓呼叫端知道要重新 push 一筆新的,而不是當成暫時性錯誤忽略。
+    if (e.code === 404 || e.code === 410) {
+      return null;
+    }
+    console.error("Failed to update Google Calendar event:", e.message);
+    return googleEventId; // 未知錯誤:保守起見假設事件還在,不要把 id 弄丟
+  }
+}
+
+/**
+ * 取消/拒絕預約時,把已經寫到 Google Calendar 的事件刪掉,保持雙向同步。
+ * 找不到（已經被手動刪掉過）或使用者沒連結 Google Calendar 都當作成功處理,不拋錯。
+ */
+export async function deleteGoogleCalendarEvent(userId, googleEventId) {
+  const calendar = await getGoogleCalendarClient(userId);
+  if (!calendar || !googleEventId) return;
+
+  try {
+    await calendar.events.delete({
+      calendarId: "primary",
+      eventId: googleEventId,
+      sendUpdates: "none",
+    });
+  } catch (e) {
+    if (e.code === 404 || e.code === 410 || e.code === 410) return; // 本來就已經不在了
+    console.error("Failed to delete Google Calendar event:", e.message);
   }
 }

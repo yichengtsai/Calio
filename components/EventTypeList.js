@@ -12,6 +12,7 @@ export default function EventTypeList() {
   const [confirmState, setConfirmState] = useState(null);
   const [username, setUsername] = useState(null);
   const [sharingId, setSharingId] = useState(null); // 哪一列的分享/QR 彈窗開著
+  const [plan, setPlan] = useState(null);
 
   async function load() {
     try {
@@ -25,10 +26,14 @@ export default function EventTypeList() {
 
   useEffect(() => {
     load();
-    // 分享連結需要知道自己的 username,才能組出 /{username}/{slug} 的公開網址
+    // 分享連結需要知道自己的 username,才能組出 /{username}/{slug} 的公開網址;
+    // 順便拿一下方案資訊,免費版滿額時要顯示升級提示。
     fetch("/api/account")
       .then((res) => res.json())
-      .then((data) => setUsername(data.username || null))
+      .then((data) => {
+        setUsername(data.username || null);
+        setPlan(data.plan || null);
+      })
       .catch(() => setUsername(null));
   }, []);
 
@@ -97,19 +102,37 @@ export default function EventTypeList() {
     );
   }
 
+  const atFreeLimit =
+    plan && !plan.hasAccess && plan.eventTypeLimit !== null && plan.eventTypeCount >= plan.eventTypeLimit;
+
+  const limitBanner = atFreeLimit ? (
+    <div className="rounded-xl border border-primary/30 bg-primary/5 px-4 py-3 flex items-center justify-between gap-3">
+      <p className="text-sm text-base-content/70">
+        You&apos;ve used {plan.eventTypeCount}/{plan.eventTypeLimit} event type on the Free plan.
+      </p>
+      <Link href="/#pricing" className="btn btn-primary btn-xs shrink-0">
+        Upgrade for unlimited
+      </Link>
+    </div>
+  ) : null;
+
   if (eventTypes.length === 0) {
     return (
-      <div className="rounded-2xl border border-dashed border-base-300 p-10 text-center">
-        <p className="text-base-content/60 mb-4">You haven&apos;t created any event types yet.</p>
-        <Link href="/dashboard/event-types/new" className="btn btn-primary btn-sm">
-          Create your first event type
-        </Link>
+      <div className="space-y-4">
+        {limitBanner}
+        <div className="rounded-2xl border border-dashed border-base-300 p-10 text-center">
+          <p className="text-base-content/60 mb-4">You haven&apos;t created any event types yet.</p>
+          <Link href="/dashboard/event-types/new" className="btn btn-primary btn-sm">
+            Create your first event type
+          </Link>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="space-y-3">
+      {limitBanner}
       {eventTypes.map((et) => {
         const url = bookingUrl(et.slug);
         const isSharing = sharingId === et.id;

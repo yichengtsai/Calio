@@ -1,11 +1,11 @@
 const config = {
   // REQUIRED
-  appName: "ShipFast",
+  appName: "Calio",
   // REQUIRED: a short description of your app for SEO tags (can be overwritten)
   appDescription:
-    "The NextJS boilerplate with all you need to build your SaaS, AI tool, or any other web app.",
+    "Calio is a scheduling page for your time — share one link, let people book straight into your real availability, and keep it all in sync with Google Calendar automatically.",
   // REQUIRED (no https://, not trialing slash at the end, just the naked domain)
-  domainName: "shipfa.st",
+  domainName: "calio.app",
   crisp: {
     // Crisp website ID. IF YOU DON'T USE CRISP: just remove this => Then add a support email in this config file (resend.supportEmail) otherwise customer support won't work.
     id: "",
@@ -13,29 +13,20 @@ const config = {
     onlyShowOnRoutes: ["/"],
   },
   stripe: {
-    // Create multiple plans in your Stripe dashboard, then add them here. You can add as many plans as you want, just make sure to add the priceId
+    // Free 版沒有 Stripe priceId,Pricing.js 會特別處理,顯示「Get started free」而不是走 checkout
     plans: [
       {
-        // REQUIRED — we use this to find the plan in the webhook (for instance if you want to update the user's credits based on the plan)
-        priceId:
-          process.env.NODE_ENV === "development"
-            ? "price_1Niyy5AxyNprDp7iZIqEyD2h"
-            : "price_456",
-        //  REQUIRED - Name of the plan, displayed on the pricing page
-        name: "Starter",
-        // A friendly description of the plan, displayed on the pricing page. Tip: explain why this plan and not others
-        description: "Perfect for small projects",
-        // The price you want to display, the one user will be charged on Stripe.
-        price: 79,
-        // If you have an anchor price (i.e. $29) that you want to display crossed out, put it here. Otherwise, leave it empty
-        priceAnchor: 99,
+        name: "Free",
+        description: "Get a booking page live in minutes",
+        price: 0,
         features: [
-          {
-            name: "NextJS boilerplate",
-          },
-          { name: "User oauth" },
-          { name: "Database" },
-          { name: "Emails" },
+          { name: "1 event type" },
+          { name: "Unlimited bookings" },
+          { name: "Real-time availability from your rules" },
+          { name: "Buffer time & minimum notice" },
+          { name: "Booking confirmations, reminders & cancellations by email" },
+          { name: "Approve or auto-confirm requests" },
+          { name: "Custom booking page branding" },
         ],
       },
       {
@@ -43,21 +34,23 @@ const config = {
         isFeatured: true,
         priceId:
           process.env.NODE_ENV === "development"
-            ? "price_1O5KtcAxyNprDp7iftKnrrpw"
-            : "price_456",
-        name: "Advanced",
-        description: "You need more power",
-        price: 99,
-        priceAnchor: 149,
+            ? "price_1Niyy5AxyNprDp7iZIqEyD2h"
+            : "price_pro_monthly",
+        // Pro 是月費訂閱,checkout mode 要用 "subscription"(見 <ButtonCheckout mode="subscription" />)
+        mode: "subscription",
+        name: "Pro",
+        description: "For anyone whose real calendar is the source of truth",
+        price: 12,
+        priceAnchor: 19,
+        billingPeriod: "/month",
         features: [
-          {
-            name: "NextJS boilerplate",
-          },
-          { name: "User oauth" },
-          { name: "Database" },
-          { name: "Emails" },
-          { name: "1 year of updates" },
-          { name: "24/7 support" },
+          { name: "Everything in Free" },
+          { name: "Unlimited event types" },
+          { name: "Two-way Google Calendar sync" },
+          { name: "Real-time busy check before every booking" },
+          { name: "New bookings written straight to your Google Calendar" },
+          { name: "Reschedules & cancellations kept in sync automatically" },
+          { name: "Priority email support" },
         ],
       },
     ],
@@ -70,11 +63,11 @@ const config = {
   },
   resend: {
     // REQUIRED — Email 'From' field to be used when sending magic login links
-    fromNoReply: `ShipFast <noreply@resend.shipfa.st>`,
+    fromNoReply: `Calio <noreply@resend.calio.app>`,
     // REQUIRED — Email 'From' field to be used when sending other emails, like abandoned carts, updates etc..
-    fromAdmin: `Marc at ShipFast <marc@resend.shipfa.st>`,
+    fromAdmin: `Calio <hello@resend.calio.app>`,
     // Email shown to customer if need support. Leave empty if not needed => if empty, set up Crisp above, otherwise you won't be able to offer customer support."
-    supportEmail: "marc.louvion@gmail.com",
+    supportEmail: "support@calio.app",
   },
   colors: {
     // REQUIRED — The DaisyUI theme to use (added to the main layout.js). Leave blank for default (light & dark mode). If you any other theme than light/dark, you need to add it in config.tailwind.js in daisyui.themes.

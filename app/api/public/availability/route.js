@@ -8,6 +8,8 @@ import Event from "@/models/Event";
 import Block from "@/models/Block";
 import { getSlotsForDate } from "@/libs/slots";
 import { rateLimit, getClientIp } from "@/libs/rateLimit";
+import { checkCalendarConflict } from "@/libs/googleCalendar";
+import { canUseGoogleCalendarSync } from "@/libs/plans";
 
 export async function GET(req) {
   const ip = getClientIp(req);
@@ -77,12 +79,25 @@ export async function GET(req) {
     }).select("startTime endTime"),
   ]);
 
+  // Pro 版:即時查一次 Google Calendar 這段範圍內的忙碌時段,一併擋掉。
+  // 這樣如果主辦人在 Google Calendar 上直接加了一個跟 Calio 無關的行程(例如手動加的內部會議),
+  // 公開頁也會馬上反映出「這時段不能約」,不用等他自己回來手動填 Block。
+  let googleBusy = [];
+  if (canUseGoogleCalendarSync(user)) {
+    const { checked, conflicts } = await checkCalendarConflict(user._id, rangeStart, rangeEnd);
+    if (checked) {
+      googleBusy = conflicts
+        .filter((b) => b.start && b.end)
+        .map((b) => ({ startTime: new Date(b.start), endTime: new Date(b.end) }));
+    }
+  }
+
   const slots = getSlotsForDate({
     timeSlots,
     timezone: user.timezone || "Asia/Taipei",
     duration: eventType.duration,
     dateStr: date,
-    existingBookings: [...existingBookings, ...busyEvents, ...busyBlocks],
+    existingBookings: [...existingBookings, ...busyEvents, ...busyBlocks, ...googleBusy],
     bufferMinutes: eventType.bufferMinutes || 0,
     minimumNoticeMinutes: eventType.minimumNoticeMinutes || 0,
   });

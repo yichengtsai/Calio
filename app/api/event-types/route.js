@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { auth } from "@/libs/auth";
 import connectMongo from "@/libs/mongoose";
 import EventType from "@/models/EventType";
+import User from "@/models/User";
+import { canCreateEventType, FREE_EVENT_TYPE_LIMIT } from "@/libs/plans";
 
 function slugify(input) {
   return input
@@ -80,6 +82,21 @@ export async function POST(req) {
   }
 
   await connectMongo();
+
+  const [user, existingCount] = await Promise.all([
+    User.findById(session.user.id),
+    EventType.countDocuments({ user: session.user.id }),
+  ]);
+
+  if (!canCreateEventType(user, existingCount)) {
+    return NextResponse.json(
+      {
+        error: `The Free plan is limited to ${FREE_EVENT_TYPE_LIMIT} event type. Upgrade to Pro for unlimited event types.`,
+        code: "event_type_limit_reached",
+      },
+      { status: 403 }
+    );
+  }
 
   const baseSlug = slugify(title) || "event";
   let slug = `${baseSlug}-${randomSuffix()}`;

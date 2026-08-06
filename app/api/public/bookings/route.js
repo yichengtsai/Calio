@@ -12,6 +12,8 @@ import {
   buildInviteeConfirmationEmail,
   buildOrganizerAutoConfirmedEmail,
 } from "@/libs/emails/bookingConfirmation";
+import { checkCalendarConflict, pushEventToGoogleCalendar } from "@/libs/googleCalendar";
+import { canUseGoogleCalendarSync } from "@/libs/plans";
 
 export async function POST(req) {
   try {
@@ -120,6 +122,22 @@ export async function POST(req) {
       );
     }
 
+    // Pro 版:除了我們自己資料庫裡的紀錄,也即時查一次主辦人本人的 Google Calendar,
+    // 擋掉「這個人在 Google Calendar 上其實已經有別的事,只是沒同步進 Calio」這種情況。
+    // checked=false(沒連結 Google Calendar,或查詢失敗)不擋流程。
+    if (canUseGoogleCalendarSync(user)) {
+      const { checked, conflicts } = await checkCalendarConflict(user._id, start, end);
+      if (checked && conflicts.length > 0) {
+        return NextResponse.json(
+          {
+            error:
+              "This time was just taken on the organizer's calendar. Please pick another.",
+          },
+          { status: 409 }
+        );
+      }
+    }
+
     const booking = await Booking.create({
       eventType: eventType._id,
       organizer: user._id,
@@ -172,7 +190,25 @@ export async function POST(req) {
         }),
       ]);
     } else {
-      // 自動確認:雙邊都直接收到確認信,不用你動手
+      // 自動確認:立刻寫回主辦人的 Google Calendar(Pro 版),讓對方在自己的行事曆上馬上看到這筆
+      // 行程,不用等他自己回來後台看。失敗不影響預約本身,只是那次沒同步成功。
+      if (canUseGoogleCalendarSync(user)) {
+        const googleEventId = await pushEventToGoogleCalendar(user._id, {
+          title: `${eventType.title} with ${inviteeName}`,
+          description: inviteeNotes || undefined,
+          location: eventType.location,
+          startTime: start,
+          endTime: end,
+          timezone,
+          participants: [{ email: inviteeEmail, name: inviteeName }],
+        });
+        if (googleEventId) {
+          booking.googleEventId = googleEventId;
+          await booking.save();
+        }
+      }
+
+      // 雙邊都直接收到確認信,不用你動手
       await Promise.allSettled([
         resend.emails.send({
           from: EMAIL_FROM,

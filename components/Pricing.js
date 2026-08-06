@@ -1,9 +1,10 @@
 import config from "@/config";
+import Link from "next/link";
 import ButtonCheckout from "./ButtonCheckout";
 
 // <Pricing/> displays the pricing plans for your app
 // It's your Stripe config in config.js.stripe.plans[] that will be used to display the plans
-// <ButtonCheckout /> renders a button that will redirect the user to Stripe checkout called the /api/stripe/create-checkout API endpoint with the correct priceId
+// A plan with no priceId (the Free plan) skips Stripe entirely and links straight into the app.
 
 const Pricing = () => {
   return (
@@ -12,13 +13,17 @@ const Pricing = () => {
         <div className="flex flex-col text-center w-full mb-20">
           <p className="font-medium text-primary mb-8">Pricing</p>
           <h2 className="font-bold text-3xl lg:text-5xl tracking-tight">
-            Save hours of repetitive code and ship faster!
+            Start free. Upgrade when your calendar needs to stay in sync.
           </h2>
+          <p className="text-base-content/60 mt-4 max-w-xl mx-auto">
+            Every plan gets a shareable booking page and real-time availability. Pro adds
+            two-way Google Calendar sync, so nothing ever gets double-booked.
+          </p>
         </div>
 
         <div className="relative flex justify-center flex-col lg:flex-row items-center lg:items-stretch gap-8">
           {config.stripe.plans.map((plan) => (
-            <div key={plan.priceId} className="relative w-full max-w-lg">
+            <div key={plan.name} className="relative w-full max-w-lg">
               {plan.isFeatured && (
                 <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20">
                   <span
@@ -62,7 +67,7 @@ const Pricing = () => {
                   </p>
                   <div className="flex flex-col justify-end mb-[4px]">
                     <p className="text-xs text-base-content/60 uppercase font-semibold">
-                      USD
+                      USD {plan.billingPeriod || (plan.price === 0 ? "" : "/once")}
                     </p>
                   </div>
                 </div>
@@ -89,11 +94,23 @@ const Pricing = () => {
                   </ul>
                 )}
                 <div className="space-y-2">
-                  <ButtonCheckout priceId={plan.priceId} />
-
-                  <p className="flex items-center justify-center gap-2 text-sm text-center text-base-content/80 font-medium relative">
-                    Pay once. Access forever.
-                  </p>
+                  {plan.priceId ? (
+                    <>
+                      <ButtonCheckout priceId={plan.priceId} mode={plan.mode || "payment"} />
+                      <p className="flex items-center justify-center gap-2 text-sm text-center text-base-content/80 font-medium relative">
+                        Cancel anytime.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <Link href="/dashboard" className="btn btn-primary btn-block">
+                        Get started free
+                      </Link>
+                      <p className="flex items-center justify-center gap-2 text-sm text-center text-base-content/80 font-medium relative">
+                        No credit card required.
+                      </p>
+                    </>
+                  )}
                 </div>
               </div>
             </div>

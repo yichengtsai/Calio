@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 
 export default function AccountSettingsForm() {
   const [isLoading, setIsLoading] = useState(true);
@@ -23,6 +24,7 @@ export default function AccountSettingsForm() {
   const [result, setResult] = useState(null);
   const [copied, setCopied] = useState(false);
   const [origin, setOrigin] = useState("");
+  const [plan, setPlan] = useState(null);
 
   useEffect(() => {
     setOrigin(window.location.origin);
@@ -45,6 +47,7 @@ export default function AccountSettingsForm() {
         setInstagram(data.socialLinks?.instagram || "");
         setPolicyNotes(data.policyNotes || "");
         setTagsInput((data.tags || []).join(", "));
+        setPlan(data.plan || null);
       } catch (e) {
         setResult({ type: "error", message: "Failed to load account info" });
       } finally {
@@ -182,6 +185,54 @@ export default function AccountSettingsForm() {
           <button type="button" onClick={handleCopy} className="btn btn-sm btn-outline shrink-0">
             {copied ? "Copied!" : "Copy"}
           </button>
+        </div>
+      )}
+
+      {/* Plan & Google Calendar sync status */}
+      {plan && (
+        <div className="rounded-xl border border-base-300 bg-base-200 px-4 py-3 space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-medium">
+              {plan.hasAccess ? "Pro plan" : "Free plan"}
+              {!plan.hasAccess && (
+                <span className="text-xs text-base-content/50 font-normal ml-1.5">
+                  ({plan.eventTypeCount}/{plan.eventTypeLimit} event type
+                  {plan.eventTypeLimit === 1 ? "" : "s"})
+                </span>
+              )}
+            </p>
+            {!plan.hasAccess && (
+              <Link href="/#pricing" className="btn btn-primary btn-xs">
+                Upgrade
+              </Link>
+            )}
+          </div>
+          <div className="flex items-center gap-2 text-sm">
+            <span
+              className={`w-2 h-2 rounded-full shrink-0 ${
+                plan.googleCalendarSyncActive
+                  ? "bg-success"
+                  : plan.googleCalendarConnected
+                  ? "bg-warning"
+                  : "bg-base-content/30"
+              }`}
+            />
+            <span className="text-base-content/70">
+              {plan.googleCalendarSyncActive
+                ? "Google Calendar connected — two-way sync is on"
+                : plan.googleCalendarConnected
+                ? "Google Calendar connected, but sync is a Pro feature"
+                : "Google Calendar not connected"}
+            </span>
+          </div>
+          {!plan.googleCalendarConnected && (
+            <Link
+              href="/api/auth/signin/google"
+              className="text-xs text-primary hover:underline inline-block"
+            >
+              Connect Google Calendar
+            </Link>
+          )}
         </div>
       )}
 

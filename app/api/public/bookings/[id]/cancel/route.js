@@ -5,6 +5,8 @@ import User from "@/models/User";
 import { resend, EMAIL_FROM } from "@/libs/resend";
 import { buildCancellationEmail } from "@/libs/emails/bookingConfirmation";
 import { rateLimit, getClientIp } from "@/libs/rateLimit";
+import { deleteGoogleCalendarEvent } from "@/libs/googleCalendar";
+import { canUseGoogleCalendarSync } from "@/libs/plans";
 
 export async function POST(req, { params }) {
   try {
@@ -47,6 +49,12 @@ export async function POST(req, { params }) {
     await booking.save();
 
     const organizer = await User.findById(booking.organizer);
+
+    // 如果這筆之前已經同步進主辦人的 Google Calendar,取消時要一併刪掉,不然主辦人的行事曆上
+    // 會留著一筆「其實已經取消了」的幽靈行程。
+    if (booking.googleEventId && canUseGoogleCalendarSync(organizer)) {
+      await deleteGoogleCalendarEvent(booking.organizer, booking.googleEventId);
+    }
 
     await resend.emails
       .send({

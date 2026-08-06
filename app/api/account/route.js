@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { auth } from "@/libs/auth";
 import connectMongo from "@/libs/mongoose";
 import User from "@/models/User";
+import EventType from "@/models/EventType";
+import { isGoogleCalendarConnected } from "@/libs/googleCalendar";
+import { FREE_EVENT_TYPE_LIMIT } from "@/libs/plans";
 
 // 這些路徑是系統本來就在用的,不能讓使用者拿去當 username,不然自己的預約頁網址會撞路由
 const RESERVED_USERNAMES = [
@@ -49,6 +52,10 @@ export async function GET() {
 
   await connectMongo();
   const user = await User.findById(session.user.id);
+  const [googleCalendarConnected, eventTypeCount] = await Promise.all([
+    isGoogleCalendarConnected(session.user.id),
+    EventType.countDocuments({ user: session.user.id }),
+  ]);
 
   return NextResponse.json({
     name: user?.name || "",
@@ -68,6 +75,14 @@ export async function GET() {
     },
     policyNotes: user?.policyNotes || "",
     tags: user?.tags || [],
+    plan: {
+      hasAccess: Boolean(user?.hasAccess),
+      googleCalendarConnected,
+      // Free 版連結了 Google 帳號也不會真的雙向同步,要升級才會啟用
+      googleCalendarSyncActive: Boolean(user?.hasAccess) && googleCalendarConnected,
+      eventTypeCount,
+      eventTypeLimit: user?.hasAccess ? null : FREE_EVENT_TYPE_LIMIT,
+    },
   });
 }
 
