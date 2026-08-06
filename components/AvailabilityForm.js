@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import TimezoneSelect from "@/components/TimezoneSelect";
 
 const DAYS = [
   { value: 1, label: "Monday" },
@@ -11,29 +12,6 @@ const DAYS = [
   { value: 6, label: "Saturday" },
   { value: 0, label: "Sunday" },
 ];
-
-const COMMON_TIMEZONES = [
-  "Asia/Taipei",
-  "Asia/Tokyo",
-  "Asia/Shanghai",
-  "Asia/Singapore",
-  "America/Los_Angeles",
-  "America/New_York",
-  "Europe/London",
-  "Europe/Paris",
-  "Australia/Sydney",
-  "UTC",
-];
-
-function getTimezoneOptions() {
-  try {
-    const all = Intl.supportedValuesOf("timeZone");
-    const rest = all.filter((tz) => !COMMON_TIMEZONES.includes(tz));
-    return [...COMMON_TIMEZONES, ...rest];
-  } catch {
-    return COMMON_TIMEZONES;
-  }
-}
 
 function emptyDayState() {
   return { enabled: false, ranges: [{ startTime: "09:00", endTime: "17:00" }] };
@@ -46,8 +24,6 @@ export default function AvailabilityForm() {
   // days: { [dayOfWeek]: { enabled, ranges: [{startTime, endTime}] } }
   const [days, setDays] = useState({});
   const [result, setResult] = useState(null);
-
-  const timezoneOptions = getTimezoneOptions();
 
   useEffect(() => {
     async function load() {
@@ -200,17 +176,7 @@ export default function AvailabilityForm() {
       {/* Timezone card */}
       <div className="rounded-2xl border border-base-300 bg-base-200 p-5">
         <label className="block text-sm font-semibold mb-2">Timezone</label>
-        <select
-          value={timezone}
-          onChange={(e) => setTimezone(e.target.value)}
-          className="select select-bordered w-full max-w-xs"
-        >
-          {timezoneOptions.map((tz) => (
-            <option key={tz} value={tz}>
-              {tz}
-            </option>
-          ))}
-        </select>
+        <TimezoneSelect value={timezone} onChange={setTimezone} className="max-w-xs" />
         <p className="text-xs text-base-content/50 mt-2">
           All hours below are in this timezone.
         </p>
