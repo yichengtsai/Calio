@@ -1,0 +1,121 @@
+@import "tailwindcss";
+@plugin "daisyui" {
+  themes: light --default, deepwork --prefersdark;
+}
+
+@plugin "daisyui/theme" {
+  name: "deepwork";
+  default: false;
+  prefersdark: true;
+  color-scheme: dark;
+
+  --color-base-100: oklch(17% 0.012 260);
+  --color-base-200: oklch(21% 0.014 260);
+  --color-base-300: oklch(27% 0.016 260);
+  --color-base-content: oklch(94% 0.006 260);
+
+  --color-primary: oklch(66% 0.19 276);
+  --color-primary-content: oklch(98% 0.01 276);
+
+  --color-secondary: oklch(72% 0.14 195);
+  --color-secondary-content: oklch(15% 0.02 195);
+
+  --color-accent: oklch(74% 0.16 40);
+  --color-accent-content: oklch(15% 0.02 40);
+
+  --color-neutral: oklch(30% 0.015 260);
+  --color-neutral-content: oklch(90% 0.006 260);
+
+  --color-info: oklch(72% 0.13 220);
+  --color-info-content: oklch(15% 0.02 220);
+
+  --color-success: oklch(72% 0.15 150);
+  --color-success-content: oklch(15% 0.02 150);
+
+  --color-warning: oklch(78% 0.15 80);
+  --color-warning-content: oklch(15% 0.02 80);
+
+  --color-error: oklch(66% 0.2 25);
+  --color-error-content: oklch(97% 0.01 25);
+
+  --radius-selector: 0.5rem;
+  --radius-field: 0.5rem;
+  --radius-box: 1rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 1;
+  --noise: 0;
+}
+
+@theme {
+  --font-display: "Satoshi", "sans-serif";
+
+  --animate-shimmer: shimmer 3s ease-out infinite alternate;
+  --animate-opacity: opacity 0.25s ease-in-out;
+  --animate-appearFromRight: appearFromRight 300ms ease-in-out;
+  --animate-wiggle: wiggle 1.5s ease-in-out infinite;
+  --animate-popup: popup 0.25s ease-in-out;
+
+  @keyframes shimmer {
+    0% { background-position: 0 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+
+  @keyframes opacity {
+    0% { opacity: 0; }
+    100% { opacity: 1; }
+  }
+
+  @keyframes appearFromRight {
+    0% { opacity: 0.3; transform: translate(15%, 0px); }
+    100% { opacity: 1; transform: translate(0); }
+  }
+
+  @keyframes wiggle {
+    0%, 20%, 80%, 100% { transform: rotate(0deg); }
+    30%, 60% { transform: rotate(-2deg); }
+    40%, 70% { transform: rotate(2deg); }
+    45% { transform: rotate(-4deg); }
+    55% { transform: rotate(4deg); }
+  }
+
+  @keyframes popup {
+    0% { transform: scale(0.8); opacity: 0.8; }
+    50% { transform: scale(1.1); opacity: 1; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+}
+
+html,
+body {
+  scroll-behavior: smooth !important;
+}
+
+progress::-webkit-progress-value {
+  transition: 0.6s width ease-out;
+}
+
+.btn-gradient {
+  background: linear-gradient(60deg, #f79533, #f37055, #ef4e7b, #a166ab, #5073b8, #1098ad, #07b39b, #6fba82) !important;
+  background-size: 300% 300% !important;
+  animation: var(--animate-shimmer) !important;
+  border: 0 !important;
+  border-color: transparent !important;
+  color: white !important;
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1) !important;
+}
+
+.btn-gradient:hover {
+  filter: saturate(1.2) !important;
+}
+
+.btn-gradient:disabled {
+  background: rgb(107 114 128 / 0.3) !important;
+  color: rgb(156 163 175) !important;
+}
+
+.btn {
+  text-transform: capitalize !important;
+}
