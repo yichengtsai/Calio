@@ -1,12 +1,12 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import connectMongo from "@/libs/mongoose";
 import User from "@/models/User";
 import EventType from "@/models/EventType";
-import BookingWidget from "@/components/BookingWidget";
-import SocialLinks from "@/components/SocialLinks";
-import config from "@/config";
 
-export default async function BookingPage({ params }) {
+// 舊版每個 event type 各自一個網址(/username/slug),現在整合進 /username 的單頁流程。
+// 保留這支路由只是為了讓過去分享出去的連結不要死掉——驗證存在之後轉址回列表頁,
+// 帶上 ?event=slug 讓 EventTypePicker 自動展開對應的日曆。
+export default async function BookingRedirectPage({ params }) {
   const { username, slug } = await params;
 
   await connectMongo();
@@ -21,40 +21,5 @@ export default async function BookingPage({ params }) {
   });
   if (!eventType) notFound();
 
-  const brandColor = user.brandColor || "#6366f1";
-
-  return (
-    <main className="min-h-screen py-16 px-6">
-      <div className="max-w-md mx-auto space-y-5">
-        <BookingWidget
-          username={username}
-          slug={slug}
-          organizerName={user.name}
-          organizerImage={user.logoUrl || user.image}
-          brandColor={brandColor}
-          eventType={{
-            title: eventType.title,
-            description: eventType.description,
-            duration: eventType.duration,
-            location: eventType.location,
-            color: eventType.color,
-          }}
-        />
-
-        <SocialLinks
-          socialLinks={{
-            linkedin: user.socialLinks?.linkedin || "",
-            website: user.socialLinks?.website || "",
-            instagram: user.socialLinks?.instagram || "",
-          }}
-          brandColor={brandColor}
-        />
-
-        <p className="text-center text-xs text-base-content/30">
-          Powered by {config.appName}
-        </p>
-      </div>
-    </main>
-  );
+  redirect(`/${username}?event=${slug}`);
 }
-

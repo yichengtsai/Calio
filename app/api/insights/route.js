@@ -7,7 +7,8 @@ import User from "@/models/User";
 import "@/models/EventType"; // 註冊 model 給 Booking 的 populate 用
 import { canUseInsights } from "@/libs/plans";
 
-const MONTHS_OF_TREND = 6;
+const DEFAULT_TREND_MONTHS = 6;
+const ALLOWED_TREND_MONTHS = [6, 12, 24]; // 前端 range 切換的合法值,避免有人手動亂打 query 拉太多資料
 const RATE_WINDOW_DAYS = 90; // 取消率/回覆時間只看近 90 天,太舊的資料參考價值不大
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -15,7 +16,42 @@ function monthKey(date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
 
-export async function GET() {
+// 建一個「月份格線」的 Map,從 (endYear, endMonth) 往前推 monthsCount 個月。
+// yearOffset 拿來做 YoY 對照:current 跟去年用一樣的 monthsCount,
+// 只是 endYear 差 1,這樣兩個 Map 的月份會自動一一對應,不用另外處理 key 對應。
+function buildMonthGrid(monthsCount, endYear, endMonth, { withYear = false } = {}) {
+  const map = new Map();
+  for (let i = 0; i < monthsCount; i++) {
+    const d = new Date(endYear, endMonth - (monthsCount - 1) + i, 1);
+    map.set(monthKey(d), {
+      key: monthKey(d),
+      label: d.toLocaleDateString("en-US", {
+        month: "short",
+        ...(withYear ? { year: "2-digit" } : {}),
+      }),
+      count: 0,
+      hours: 0,
+    });
+  }
+  return map;
+}
+
+function addToGrid(map, startTime, endTime) {
+  const start = new Date(startTime);
+  const bucket = map.get(monthKey(start));
+  if (!bucket) return; // 落在查詢範圍外(理論上查詢已經濾過,這裡防呆)
+  bucket.count += 1;
+  bucket.hours += (new Date(endTime) - start) / 3600000;
+}
+
+function toTrendArray(map) {
+  return [...map.values()].map((m) => ({
+    ...m,
+    hours: Math.round(m.hours * 10) / 10,
+  }));
+}
+
+export async function GET(request) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
@@ -31,58 +67,58 @@ export async function GET() {
     );
   }
 
+  const { searchParams } = new URL(request.url);
+  const requestedMonths = Number(searchParams.get("months"));
+  const trendMonths = ALLOWED_TREND_MONTHS.includes(requestedMonths)
+    ? requestedMonths
+    : DEFAULT_TREND_MONTHS;
+  const compareYoy = searchParams.get("compare") === "yoy";
+
   const now = new Date();
-  // 6 個月前的月初,當作這次查詢資料的下限——月趨勢跟近 90 天的取消率/回覆時間統計都在這個範圍內
-  const trendStart = new Date(now.getFullYear(), now.getMonth() - (MONTHS_OF_TREND - 1), 1);
   const rateWindowStart = new Date(now.getTime() - RATE_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+
+  // 當年跟去年的月份格線各自的起始月,取兩者中較早的當查詢下限
+  const currentGridStart = new Date(now.getFullYear(), now.getMonth() - (trendMonths - 1), 1);
+  const prevYearGridStart = compareYoy
+    ? new Date(now.getFullYear() - 1, now.getMonth() - (trendMonths - 1), 1)
+    : currentGridStart;
+  const queryStart = compareYoy ? prevYearGridStart : currentGridStart;
 
   const [bookings, events] = await Promise.all([
     Booking.find({
       organizer: session.user.id,
-      $or: [{ startTime: { $gte: trendStart } }, { createdAt: { $gte: trendStart } }],
+      $or: [{ startTime: { $gte: queryStart } }, { createdAt: { $gte: queryStart } }],
     }).populate("eventType", "title color"),
     Event.find({
       organizer: session.user.id,
-      startTime: { $gte: trendStart },
+      startTime: { $gte: queryStart },
     }),
   ]);
 
-  // ---- 月趨勢:近 6 個月每月的會議數 + 總時數(只算已確認/未取消的) ----
-  const trendMap = new Map();
-  for (let i = 0; i < MONTHS_OF_TREND; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() - (MONTHS_OF_TREND - 1) + i, 1);
-    trendMap.set(monthKey(d), {
-      key: monthKey(d),
-      label: d.toLocaleDateString("en-US", { month: "short" }),
-      count: 0,
-      hours: 0,
-    });
+  const confirmedBookings = bookings.filter((b) => b.status === "confirmed");
+  const activeEvents = events.filter((e) => e.status !== "cancelled");
+
+  // ---- 月趨勢:目前選擇的區間(6/12/24 個月)每月的會議數 + 總時數 ----
+  const currentGrid = buildMonthGrid(trendMonths, now.getFullYear(), now.getMonth(), {
+    withYear: trendMonths > 12,
+  });
+  confirmedBookings.forEach((b) => addToGrid(currentGrid, b.startTime, b.endTime));
+  activeEvents.forEach((e) => addToGrid(currentGrid, e.startTime, e.endTime));
+  const monthlyTrend = toTrendArray(currentGrid);
+
+  // ---- YoY 對照:同樣長度的區間,往前推 1 年,月份 index 跟 monthlyTrend 一一對應 ----
+  let monthlyTrendPrevYear = null;
+  if (compareYoy) {
+    const prevGrid = buildMonthGrid(trendMonths, now.getFullYear() - 1, now.getMonth());
+    confirmedBookings.forEach((b) => addToGrid(prevGrid, b.startTime, b.endTime));
+    activeEvents.forEach((e) => addToGrid(prevGrid, e.startTime, e.endTime));
+    monthlyTrendPrevYear = toTrendArray(prevGrid);
   }
 
-  function addToTrend(startTime, endTime) {
-    const start = new Date(startTime);
-    const bucket = trendMap.get(monthKey(start));
-    if (!bucket) return; // 落在 6 個月範圍外(理論上查詢已經濾過,這裡防呆)
-    bucket.count += 1;
-    bucket.hours += (new Date(endTime) - start) / 3600000;
-  }
-
-  bookings
-    .filter((b) => b.status === "confirmed")
-    .forEach((b) => addToTrend(b.startTime, b.endTime));
-  events
-    .filter((e) => e.status !== "cancelled")
-    .forEach((e) => addToTrend(e.startTime, e.endTime));
-
-  const monthlyTrend = [...trendMap.values()].map((m) => ({
-    ...m,
-    hours: Math.round(m.hours * 10) / 10,
-  }));
-
-  // ---- Event Type 排名:近 6 個月,已確認的預約數 ----
+  // ---- Event Type 排名:目前選擇區間內,已確認的預約數 ----
   const rankingMap = new Map();
-  bookings
-    .filter((b) => b.status === "confirmed" && b.eventType)
+  confirmedBookings
+    .filter((b) => b.eventType && new Date(b.startTime) >= currentGridStart)
     .forEach((b) => {
       const id = b.eventType._id.toString();
       const entry = rankingMap.get(id) || {
@@ -132,8 +168,8 @@ export async function GET() {
     : null;
 
   // ---- 這個月 vs 上個月 ----
-  const thisMonth = trendMap.get(monthKey(now));
-  const lastMonth = trendMap.get(monthKey(new Date(now.getFullYear(), now.getMonth() - 1, 1)));
+  const thisMonth = currentGrid.get(monthKey(now));
+  const lastMonth = currentGrid.get(monthKey(new Date(now.getFullYear(), now.getMonth() - 1, 1)));
   const momChangePct =
     lastMonth && lastMonth.count > 0
       ? Math.round(((thisMonth.count - lastMonth.count) / lastMonth.count) * 100)
@@ -141,6 +177,8 @@ export async function GET() {
 
   return NextResponse.json({
     monthlyTrend,
+    monthlyTrendPrevYear,
+    trendMonths,
     eventTypeRanking,
     cancellationRate,
     avgResponseMinutes,

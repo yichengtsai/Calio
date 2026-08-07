@@ -1,12 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import TimezoneSelect from "@/components/TimezoneSelect";
 import {
   addDaysToDateStr,
   dateStrInTimezone,
   formatTimezoneLabel,
 } from "@/libs/timezone";
+
+// 最多可以往未來看幾天——目前只是前端的顯示上限，
+// 如果你的 EventType 本身有設定「最多提前幾天可預約」，記得把這個值對齊過去。
+const MAX_ADVANCE_DAYS = 60;
 
 // 產生 .ics 檔內容,讓使用者可以把預約直接加進自己的行事曆 app
 function buildIcs({ title, description, location, startTime, endTime }) {
@@ -87,6 +91,24 @@ function formatSlotFullDate(iso, timeZone) {
   });
 }
 
+// 給定某年某月(0-indexed month),排出月曆格子(週日開頭),
+// 月初/月底補 null 讓格子對齊星期幾。
+function buildCalendarWeeks(year, month) {
+  const firstWeekday = new Date(Date.UTC(year, month, 1)).getUTCDay();
+  const totalDays = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+
+  const cells = [];
+  for (let i = 0; i < firstWeekday; i++) cells.push(null);
+  for (let d = 1; d <= totalDays; d++) {
+    cells.push(`${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`);
+  }
+  while (cells.length % 7 !== 0) cells.push(null);
+
+  const weeks = [];
+  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+  return weeks;
+}
+
 function ClockIcon() {
   return (
     <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 shrink-0">
@@ -111,6 +133,22 @@ function PinIcon() {
   );
 }
 
+function ChevronIcon({ direction = "left" }) {
+  return (
+    <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+      <path
+        fillRule="evenodd"
+        d={
+          direction === "left"
+            ? "M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z"
+            : "M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z"
+        }
+        clipRule="evenodd"
+      />
+    </svg>
+  );
+}
+
 export default function BookingWidget({
   username,
   slug,
@@ -122,9 +160,16 @@ export default function BookingWidget({
   const [mounted, setMounted] = useState(false);
   // 預約人自己選的時區,一開始自動偵測瀏覽器時區,但可以手動換
   const [timezone, setTimezone] = useState(null);
-  const [dayOffset, setDayOffset] = useState(0);
+  const [monthCursor, setMonthCursor] = useState(null); // { year, month } — month 0-indexed
+  const [selectedDate, setSelectedDate] = useState(null);
+  const [availabilityMap, setAvailabilityMap] = useState(new Map()); // dateStr -> "loading" | true | false
+  // 記錄「已經問過/正在問」的日期——用 ref 而不是丟進 availabilityMap state 本身去判斷,
+  // 是因為如果拿 availabilityMap 當 effect 的依賴,setAvailabilityMap(標成 loading) 一觸發
+  // re-render,effect 依賴變了又會馬上重跑一次,連帶把上一輪剛發出去、還沒回來的 fetch
+  // 用同一個 controller.abort() 砍掉,導致 Network 分頁一堆「已取消」、每天永遠查不到時段。
+  const checkedDatesRef = useRef(new Set());
   const [slots, setSlots] = useState([]);
-  const [isLoadingSlots, setIsLoadingSlots] = useState(true);
+  const [isLoadingSlots, setIsLoadingSlots] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [step, setStep] = useState("select-time"); // select-time | details | success
 
@@ -141,8 +186,10 @@ export default function BookingWidget({
 
   function handleTimezoneChange(tz) {
     setTimezone(tz);
-    // 換時區之後,原本選到的第幾天可能對不上了(日曆日跳動),回到今天最保險
-    setDayOffset(0);
+    // 換時區之後,日曆的月份格線、每天的可預約狀態都要重算,清快取最保險
+    setAvailabilityMap(new Map());
+    checkedDatesRef.current = new Set();
+    setSelectedDate(null);
     setSelectedSlot(null);
   }
 
@@ -151,30 +198,126 @@ export default function BookingWidget({
     () => dateStrInTimezone(new Date(), timezone || "UTC"),
     [timezone]
   );
-
-  // 14 天可選範圍,做成一排可以直接點的日期條(單純日曆日期字串,例如 "2026-08-03")
-  const visibleDays = useMemo(
-    () => [...Array(14)].map((_, i) => addDaysToDateStr(todayStr, i)),
+  const maxDateStr = useMemo(
+    () => (todayStr ? addDaysToDateStr(todayStr, MAX_ADVANCE_DAYS) : null),
     [todayStr]
   );
 
-  const dateStr = visibleDays[dayOffset];
-
+  // 一旦知道「今天」是哪一天,月曆預設停在今天所在的月份
   useEffect(() => {
-    if (!timezone) return;
+    if (!todayStr || monthCursor) return;
+    const { y, m } = partsFromDateStr(todayStr);
+    setMonthCursor({ year: y, month: m - 1 });
+  }, [todayStr, monthCursor]);
+
+  const weeks = useMemo(
+    () => (monthCursor ? buildCalendarWeeks(monthCursor.year, monthCursor.month) : []),
+    [monthCursor]
+  );
+  const monthLabel = useMemo(
+    () =>
+      monthCursor
+        ? new Date(Date.UTC(monthCursor.year, monthCursor.month, 1)).toLocaleDateString("en-US", {
+            month: "long",
+            year: "numeric",
+            timeZone: "UTC",
+          })
+        : "",
+    [monthCursor]
+  );
+
+  const canGoPrevMonth = useMemo(() => {
+    if (!monthCursor || !todayStr) return false;
+    const { y, m } = partsFromDateStr(todayStr);
+    return monthCursor.year > y || (monthCursor.year === y && monthCursor.month > m - 1);
+  }, [monthCursor, todayStr]);
+
+  const canGoNextMonth = useMemo(() => {
+    if (!monthCursor || !maxDateStr) return false;
+    const { y, m } = partsFromDateStr(maxDateStr);
+    return monthCursor.year < y || (monthCursor.year === y && monthCursor.month < m - 1);
+  }, [monthCursor, maxDateStr]);
+
+  // 月曆上輕量標記「這天有沒有空位」——每天各打一次 availability API,
+  // 不做時區邊界的精準校正(那個留給使用者實際點下去那天再算),純粹當作視覺提示。
+  useEffect(() => {
+    if (!monthCursor || !timezone || !todayStr) return;
+    const controller = new AbortController();
+
+    const daysToCheck = weeks
+      .flat()
+      .filter((d) => d && d >= todayStr && d <= maxDateStr && !checkedDatesRef.current.has(d));
+
+    if (daysToCheck.length === 0) return;
+
+    // 馬上標記成「已經在問了」,靠 ref 記錄、不透過 state,避免觸發這個 effect 自己重跑
+    daysToCheck.forEach((d) => checkedDatesRef.current.add(d));
+
+    setAvailabilityMap((prev) => {
+      const next = new Map(prev);
+      daysToCheck.forEach((d) => next.set(d, "loading"));
+      return next;
+    });
+
+    // 跟使用者實際點下去查時段時用同一套邏輯:每天都要抓「前一天、當天、後一天」
+    // 合併後再依訪客自己的時區過濾,圓點提示才會跟點進去看到的結果一致,
+    // 不會出現「有綠點但點進去卻是空的」這種時區邊界沒對齊的狀況。
+    // 相鄰兩天需要的候選日期會重疊,用 Set 去重複,呼叫量不會變成 3 倍。
+    const rawDatesNeeded = new Set();
+    daysToCheck.forEach((d) => {
+      rawDatesNeeded.add(addDaysToDateStr(d, -1));
+      rawDatesNeeded.add(d);
+      rawDatesNeeded.add(addDaysToDateStr(d, 1));
+    });
+
+    Promise.all(
+      [...rawDatesNeeded].map((d) =>
+        fetch(
+          `/api/public/availability?username=${encodeURIComponent(username)}&slug=${encodeURIComponent(slug)}&date=${d}`,
+          { signal: controller.signal }
+        )
+          .then((res) => (res.ok ? res.json() : { slots: [] }))
+          .then((data) => [d, data.slots || []])
+          .catch(() => [d, []])
+      )
+    ).then((results) => {
+      const rawByDate = new Map(results);
+
+      setAvailabilityMap((prev) => {
+        const next = new Map(prev);
+        daysToCheck.forEach((d) => {
+          const merged = new Map();
+          [addDaysToDateStr(d, -1), d, addDaysToDateStr(d, 1)].forEach((candidateDate) => {
+            (rawByDate.get(candidateDate) || []).forEach((iso) => merged.set(iso, iso));
+          });
+
+          const hasSlotsForDay = [...merged.values()].some(
+            (iso) => dateStrInTimezone(new Date(iso), timezone) === d
+          );
+          next.set(d, hasSlotsForDay);
+        });
+        return next;
+      });
+    });
+
+    return () => controller.abort();
+  }, [monthCursor, timezone, todayStr, maxDateStr, username, slug, weeks]);
+
+  // 選定某一天之後,才做精準查詢:主辦人後台是用「他自己的時區」算一天的起訖,
+  // 跟預約人選的時區不一定對齊(時差可能讓同一個時刻落在不同的日曆日)。
+  // 所以查詢日期的前一天、當天、後一天都抓,再依「預約人選的時區」把時段過濾回真正對應到的那一天。
+  useEffect(() => {
+    if (!selectedDate || !timezone) return;
     let cancelled = false;
     const controller = new AbortController();
 
     async function loadSlots() {
       setIsLoadingSlots(true);
       try {
-        // 主辦人後台是用「他自己的時區」在算一天的起訖,跟預約人選的時區不一定對齊
-        // (時差可能讓同一個時刻落在不同的日曆日)。所以查詢日期的前一天、當天、
-        // 後一天都抓,再依「預約人選的時區」把時段過濾回真正對應到的那一天。
         const candidateDates = [
-          addDaysToDateStr(dateStr, -1),
-          dateStr,
-          addDaysToDateStr(dateStr, 1),
+          addDaysToDateStr(selectedDate, -1),
+          selectedDate,
+          addDaysToDateStr(selectedDate, 1),
         ];
 
         const results = await Promise.all(
@@ -194,7 +337,7 @@ export default function BookingWidget({
         }
 
         const filtered = [...merged.values()]
-          .filter((iso) => dateStrInTimezone(new Date(iso), timezone) === dateStr)
+          .filter((iso) => dateStrInTimezone(new Date(iso), timezone) === selectedDate)
           .sort((a, b) => new Date(a) - new Date(b));
 
         if (!cancelled) setSlots(filtered);
@@ -210,7 +353,7 @@ export default function BookingWidget({
       cancelled = true;
       controller.abort();
     };
-  }, [dateStr, username, slug, timezone]);
+  }, [selectedDate, username, slug, timezone]);
 
   async function handleConfirm(e) {
     e.preventDefault();
@@ -283,12 +426,7 @@ export default function BookingWidget({
         </div>
         <div className="p-6 space-y-3">
           <div className="h-10 rounded-lg bg-base-300 animate-pulse" />
-          <div className="h-14 rounded-lg bg-base-300 animate-pulse" />
-          <div className="grid grid-cols-3 gap-2">
-            {[...Array(6)].map((_, i) => (
-              <div key={i} className="h-10 rounded-lg bg-base-300 animate-pulse" />
-            ))}
-          </div>
+          <div className="h-64 rounded-lg bg-base-300 animate-pulse" />
         </div>
       </div>
     );
@@ -394,38 +532,92 @@ export default function BookingWidget({
             <TimezoneSelect value={timezone} onChange={handleTimezoneChange} />
           </div>
 
+          {/* 月曆 */}
           <div>
-            <p className="text-sm font-semibold mb-2">{monthYearLabel(dateStr)}</p>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm font-semibold">{monthLabel}</p>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  disabled={!canGoPrevMonth}
+                  onClick={() =>
+                    setMonthCursor((c) =>
+                      c.month === 0
+                        ? { year: c.year - 1, month: 11 }
+                        : { year: c.year, month: c.month - 1 }
+                    )
+                  }
+                  className="btn btn-ghost btn-xs btn-square disabled:opacity-20"
+                  aria-label="Previous month"
+                >
+                  <ChevronIcon direction="left" />
+                </button>
+                <button
+                  type="button"
+                  disabled={!canGoNextMonth}
+                  onClick={() =>
+                    setMonthCursor((c) =>
+                      c.month === 11
+                        ? { year: c.year + 1, month: 0 }
+                        : { year: c.year, month: c.month + 1 }
+                    )
+                  }
+                  className="btn btn-ghost btn-xs btn-square disabled:opacity-20"
+                  aria-label="Next month"
+                >
+                  <ChevronIcon direction="right" />
+                </button>
+              </div>
+            </div>
 
-            {/* 14天可橫向滑動的日期條 */}
-            <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
-              {visibleDays.map((day, i) => {
-                const isSelected = i === dayOffset;
+            <div className="grid grid-cols-7 gap-1 text-center mb-1.5">
+              {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => (
+                <span key={i} className="text-[10px] uppercase text-base-content/40">
+                  {d}
+                </span>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-7 gap-1">
+              {weeks.flat().map((day, i) => {
+                if (!day) return <div key={`blank-${i}`} />;
+
+                const inRange = day >= todayStr && day <= maxDateStr;
+                // status 只當作視覺提示用,不拿來決定能不能點——精準的可預約時段
+                // 一律等使用者真的點下去之後,用三天合併過濾的邏輯去問,才是準的。
+                const status = availabilityMap.get(day); // undefined | "loading" | true | false
+                const isSelected = day === selectedDate;
                 const isToday = day === todayStr;
+                const isClickable = inRange;
+                const hasSlots = isClickable && status === true && !isSelected;
+
                 return (
                   <button
                     key={day}
                     type="button"
+                    disabled={!isClickable}
                     onClick={() => {
-                      setDayOffset(i);
+                      setSelectedDate(day);
                       setSelectedSlot(null);
                     }}
-                    style={isSelected ? { backgroundColor: brandColor, color: "white" } : undefined}
-                    className={`flex flex-col items-center justify-center w-12 h-14 rounded-lg shrink-0 transition-all hover:scale-105 active:scale-95 ${
+                    style={{
+                      ...(isSelected ? { backgroundColor: brandColor, color: "white" } : undefined),
+                      ...(hasSlots
+                        ? { borderColor: brandColor, boxShadow: `inset 0 0 0 1px ${brandColor}` }
+                        : undefined),
+                    }}
+                    className={`relative aspect-square rounded-lg text-sm flex flex-col items-center justify-center transition-all border ${
                       isSelected
-                        ? "shadow-md"
-                        : "bg-base-300/50 hover:bg-base-300 text-base-content"
+                        ? "shadow-md font-semibold border-transparent"
+                        : hasSlots
+                        ? "hover:bg-base-300 active:scale-95 font-semibold"
+                        : isClickable
+                        ? "border-transparent hover:bg-base-300 active:scale-95 font-medium"
+                        : "border-transparent text-base-content/25 cursor-default"
                     }`}
                   >
-                    <span className="text-[10px] uppercase opacity-70">{weekdayShort(day)}</span>
-                    <span className="text-sm font-semibold">
+                    <span className={isToday && !isSelected ? "underline underline-offset-2" : ""}>
                       {dayOfMonth(day)}
-                      {isToday && !isSelected && (
-                        <span
-                          className="block w-1 h-1 rounded-full mx-auto mt-0.5"
-                          style={{ backgroundColor: brandColor }}
-                        />
-                      )}
                     </span>
                   </button>
                 );
@@ -433,48 +625,48 @@ export default function BookingWidget({
             </div>
           </div>
 
-          {isLoadingSlots ? (
-            <div className="grid grid-cols-3 gap-2">
-              {[...Array(6)].map((_, i) => (
-                <div key={i} className="h-10 rounded-lg bg-base-300 animate-pulse" />
-              ))}
-            </div>
-          ) : slots.length === 0 ? (
-            <div className="text-center py-8 space-y-3">
-              <p className="text-sm text-base-content/50">No open times on this day.</p>
-              {dayOffset < visibleDays.length - 1 && (
-                <button
-                  type="button"
-                  onClick={() => setDayOffset((d) => Math.min(visibleDays.length - 1, d + 1))}
-                  className="btn btn-ghost btn-sm"
-                >
-                  Try the next day →
-                </button>
+          {/* 選定日期後,展開當天的時段 */}
+          {selectedDate && (
+            <div className="animate-appearFromRight">
+              <p className="text-xs font-semibold uppercase tracking-wide text-base-content/40 mb-2">
+                {weekdayShort(selectedDate)}, {monthYearLabel(selectedDate)} {dayOfMonth(selectedDate)}
+              </p>
+
+              {isLoadingSlots ? (
+                <div className="grid grid-cols-3 gap-2">
+                  {[...Array(6)].map((_, i) => (
+                    <div key={i} className="h-10 rounded-lg bg-base-300 animate-pulse" />
+                  ))}
+                </div>
+              ) : slots.length === 0 ? (
+                <p className="text-sm text-base-content/50 py-4 text-center">
+                  No open times on this day.
+                </p>
+              ) : (
+                <div className="grid grid-cols-3 gap-2">
+                  {slots.map((slot, i) => (
+                    <button
+                      key={slot}
+                      type="button"
+                      onClick={() => {
+                        setSelectedSlot(slot);
+                        setStep("details");
+                        setError(null);
+                      }}
+                      style={{
+                        borderColor: brandColor,
+                        color: brandColor,
+                        animationDelay: `${Math.min(i, 12) * 30}ms`,
+                      }}
+                      className="btn btn-outline btn-sm hover:text-white active:scale-95 transition-transform animate-opacity"
+                      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = brandColor)}
+                      onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "")}
+                    >
+                      {formatSlotTime(slot, timezone)}
+                    </button>
+                  ))}
+                </div>
               )}
-            </div>
-          ) : (
-            <div className="grid grid-cols-3 gap-2">
-              {slots.map((slot, i) => (
-                <button
-                  key={slot}
-                  type="button"
-                  onClick={() => {
-                    setSelectedSlot(slot);
-                    setStep("details");
-                    setError(null);
-                  }}
-                  style={{
-                    borderColor: brandColor,
-                    color: brandColor,
-                    animationDelay: `${Math.min(i, 12) * 30}ms`,
-                  }}
-                  className="btn btn-outline btn-sm hover:text-white active:scale-95 transition-transform animate-opacity"
-                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = brandColor)}
-                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "")}
-                >
-                  {formatSlotTime(slot, timezone)}
-                </button>
-              ))}
             </div>
           )}
         </div>
