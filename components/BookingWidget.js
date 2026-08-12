@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import TimezoneSelect from "@/components/TimezoneSelect";
 import {
   addDaysToDateStr,
@@ -162,16 +162,16 @@ export default function BookingWidget({
   const [timezone, setTimezone] = useState(null);
   const [monthCursor, setMonthCursor] = useState(null); // { year, month } — month 0-indexed
   const [selectedDate, setSelectedDate] = useState(null);
-  const [availabilityMap, setAvailabilityMap] = useState(new Map()); // dateStr -> "loading" | true | false
-  // 記錄「已經問過/正在問」的日期——用 ref 而不是丟進 availabilityMap state 本身去判斷,
-  // 是因為如果拿 availabilityMap 當 effect 的依賴,setAvailabilityMap(標成 loading) 一觸發
-  // re-render,effect 依賴變了又會馬上重跑一次,連帶把上一輪剛發出去、還沒回來的 fetch
-  // 用同一個 controller.abort() 砍掉,導致 Network 分頁一堆「已取消」、每天永遠查不到時段。
-  const checkedDatesRef = useRef(new Set());
-  const [slots, setSlots] = useState([]);
-  const [isLoadingSlots, setIsLoadingSlots] = useState(false);
+  // 原始時段資料快取:dateStr -> [ISO string, ...]。用整月為單位一次向後端要,
+  // 之後不管是月曆上的圓點/綠框,還是點某天展開的時段清單,都是從這份快取
+  // 直接算出來(UTC 時間戳跟時區無關),換時區、點選日期都不用再打 API。
+  const [rawSlotsByDate, setRawSlotsByDate] = useState(new Map());
+  const [isLoadingCalendar, setIsLoadingCalendar] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [step, setStep] = useState("select-time"); // select-time | details | success
+  // 預約成功後,後端回傳的 booking 會帶 id + cancelToken(跟確認信裡取消連結用的是同一組),
+  // 存起來才能在完成畫面上直接顯示取消連結,不用讓客戶只能從信箱裡找
+  const [confirmedBooking, setConfirmedBooking] = useState(null);
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -186,9 +186,8 @@ export default function BookingWidget({
 
   function handleTimezoneChange(tz) {
     setTimezone(tz);
-    // 換時區之後,日曆的月份格線、每天的可預約狀態都要重算,清快取最保險
-    setAvailabilityMap(new Map());
-    checkedDatesRef.current = new Set();
+    // 原始時段資料(UTC 時間戳)跟時區無關,不用清快取——換時區只是重新
+    // 用新時區去篩選/顯示同一份資料,所以這裡不用再重新打 API。
     setSelectedDate(null);
     setSelectedSlot(null);
   }
@@ -238,122 +237,81 @@ export default function BookingWidget({
     return monthCursor.year < y || (monthCursor.year === y && monthCursor.month < m - 1);
   }, [monthCursor, maxDateStr]);
 
-  // 月曆上輕量標記「這天有沒有空位」——每天各打一次 availability API,
-  // 不做時區邊界的精準校正(那個留給使用者實際點下去那天再算),純粹當作視覺提示。
+  // 整個月只打一次 API(而不是每天各打一次):後端會把該月「前一天到後一天」
+  // 範圍內每一天的原始時段(UTC ISO字串)一次算好回傳,月曆一出現就能同步標示綠框,
+  // 不用等 30 幾支請求一支一支跑完。已經抓過的月份不會重複打。
   useEffect(() => {
-    if (!monthCursor || !timezone || !todayStr) return;
+    if (!monthCursor) return;
+    const { year, month } = monthCursor;
+    const totalDays = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+    const firstOfMonth = `${year}-${String(month + 1).padStart(2, "0")}-01`;
+    const lastOfMonth = `${year}-${String(month + 1).padStart(2, "0")}-${String(totalDays).padStart(2, "0")}`;
+
     const controller = new AbortController();
+    setIsLoadingCalendar(true);
 
-    const daysToCheck = weeks
-      .flat()
-      .filter((d) => d && d >= todayStr && d <= maxDateStr && !checkedDatesRef.current.has(d));
-
-    if (daysToCheck.length === 0) return;
-
-    // 馬上標記成「已經在問了」,靠 ref 記錄、不透過 state,避免觸發這個 effect 自己重跑
-    daysToCheck.forEach((d) => checkedDatesRef.current.add(d));
-
-    setAvailabilityMap((prev) => {
-      const next = new Map(prev);
-      daysToCheck.forEach((d) => next.set(d, "loading"));
-      return next;
-    });
-
-    // 跟使用者實際點下去查時段時用同一套邏輯:每天都要抓「前一天、當天、後一天」
-    // 合併後再依訪客自己的時區過濾,圓點提示才會跟點進去看到的結果一致,
-    // 不會出現「有綠點但點進去卻是空的」這種時區邊界沒對齊的狀況。
-    // 相鄰兩天需要的候選日期會重疊,用 Set 去重複,呼叫量不會變成 3 倍。
-    const rawDatesNeeded = new Set();
-    daysToCheck.forEach((d) => {
-      rawDatesNeeded.add(addDaysToDateStr(d, -1));
-      rawDatesNeeded.add(d);
-      rawDatesNeeded.add(addDaysToDateStr(d, 1));
-    });
-
-    Promise.all(
-      [...rawDatesNeeded].map((d) =>
-        fetch(
-          `/api/public/availability?username=${encodeURIComponent(username)}&slug=${encodeURIComponent(slug)}&date=${d}`,
-          { signal: controller.signal }
-        )
-          .then((res) => (res.ok ? res.json() : { slots: [] }))
-          .then((data) => [d, data.slots || []])
-          .catch(() => [d, []])
-      )
-    ).then((results) => {
-      const rawByDate = new Map(results);
-
-      setAvailabilityMap((prev) => {
-        const next = new Map(prev);
-        daysToCheck.forEach((d) => {
-          const merged = new Map();
-          [addDaysToDateStr(d, -1), d, addDaysToDateStr(d, 1)].forEach((candidateDate) => {
-            (rawByDate.get(candidateDate) || []).forEach((iso) => merged.set(iso, iso));
-          });
-
-          const hasSlotsForDay = [...merged.values()].some(
-            (iso) => dateStrInTimezone(new Date(iso), timezone) === d
-          );
-          next.set(d, hasSlotsForDay);
+    fetch(
+      `/api/public/availability/month?username=${encodeURIComponent(username)}&slug=${encodeURIComponent(
+        slug
+      )}&start=${firstOfMonth}&end=${lastOfMonth}`,
+      { signal: controller.signal }
+    )
+      .then((res) => (res.ok ? res.json() : { slotsByDate: {} }))
+      .then((data) => {
+        setRawSlotsByDate((prev) => {
+          const next = new Map(prev);
+          Object.entries(data.slotsByDate || {}).forEach(([d, isoList]) => next.set(d, isoList));
+          return next;
         });
-        return next;
-      });
-    });
+      })
+      .catch(() => {})
+      .finally(() => setIsLoadingCalendar(false));
 
     return () => controller.abort();
-  }, [monthCursor, timezone, todayStr, maxDateStr, username, slug, weeks]);
+  }, [monthCursor, username, slug]);
 
-  // 選定某一天之後,才做精準查詢:主辦人後台是用「他自己的時區」算一天的起訖,
-  // 跟預約人選的時區不一定對齊(時差可能讓同一個時刻落在不同的日曆日)。
-  // 所以查詢日期的前一天、當天、後一天都抓,再依「預約人選的時區」把時段過濾回真正對應到的那一天。
-  useEffect(() => {
-    if (!selectedDate || !timezone) return;
-    let cancelled = false;
-    const controller = new AbortController();
+  // 月曆上每一天要不要加綠框:直接從已經抓好的整月快取算,不用再打 API。
+  // 跟原本邏輯一樣,合併「前一天、當天、後一天」的原始時段再依訪客時區篩選,
+  // 是為了對齊主辦人時區跟訪客時區不同時,日曆日的邊界不會對不上。
+  const availabilityMap = useMemo(() => {
+    const map = new Map();
+    weeks.flat().forEach((day) => {
+      if (!day) return;
+      const candidateDates = [addDaysToDateStr(day, -1), day, addDaysToDateStr(day, 1)];
+      const allLoaded = candidateDates.every((d) => rawSlotsByDate.has(d));
+      if (!allLoaded) return; // 還沒抓回來,先不標記(視覺上就是尚未有綠框)
 
-    async function loadSlots() {
-      setIsLoadingSlots(true);
-      try {
-        const candidateDates = [
-          addDaysToDateStr(selectedDate, -1),
-          selectedDate,
-          addDaysToDateStr(selectedDate, 1),
-        ];
+      const merged = new Map();
+      candidateDates.forEach((d) => (rawSlotsByDate.get(d) || []).forEach((iso) => merged.set(iso, iso)));
+      const hasSlotsForDay = [...merged.values()].some(
+        (iso) => dateStrInTimezone(new Date(iso), timezone) === day
+      );
+      map.set(day, hasSlotsForDay);
+    });
+    return map;
+  }, [weeks, rawSlotsByDate, timezone]);
 
-        const results = await Promise.all(
-          candidateDates.map((d) =>
-            fetch(
-              `/api/public/availability?username=${encodeURIComponent(username)}&slug=${encodeURIComponent(slug)}&date=${d}`,
-              { signal: controller.signal }
-            )
-              .then((res) => (res.ok ? res.json() : { slots: [] }))
-              .catch(() => ({ slots: [] }))
-          )
-        );
+  // 選定某一天之後的時段清單,一樣直接從快取算,不用再打 API。
+  const selectedDateSlots = useMemo(() => {
+    if (!selectedDate || !timezone) return null;
+    const candidateDates = [
+      addDaysToDateStr(selectedDate, -1),
+      selectedDate,
+      addDaysToDateStr(selectedDate, 1),
+    ];
+    const allLoaded = candidateDates.every((d) => rawSlotsByDate.has(d));
+    if (!allLoaded) return null; // 還在等整月資料回來
 
-        const merged = new Map();
-        for (const data of results) {
-          for (const iso of data.slots || []) merged.set(iso, iso);
-        }
+    const merged = new Map();
+    candidateDates.forEach((d) => (rawSlotsByDate.get(d) || []).forEach((iso) => merged.set(iso, iso)));
 
-        const filtered = [...merged.values()]
-          .filter((iso) => dateStrInTimezone(new Date(iso), timezone) === selectedDate)
-          .sort((a, b) => new Date(a) - new Date(b));
+    return [...merged.values()]
+      .filter((iso) => dateStrInTimezone(new Date(iso), timezone) === selectedDate)
+      .sort((a, b) => new Date(a) - new Date(b));
+  }, [selectedDate, rawSlotsByDate, timezone]);
 
-        if (!cancelled) setSlots(filtered);
-      } catch (e) {
-        if (!cancelled) setSlots([]);
-      } finally {
-        if (!cancelled) setIsLoadingSlots(false);
-      }
-    }
-
-    loadSlots();
-    return () => {
-      cancelled = true;
-      controller.abort();
-    };
-  }, [selectedDate, username, slug, timezone]);
+  const slots = selectedDateSlots || [];
+  const isLoadingSlots = !!selectedDate && selectedDateSlots === null;
 
   async function handleConfirm(e) {
     e.preventDefault();
@@ -385,6 +343,7 @@ export default function BookingWidget({
         return;
       }
 
+      setConfirmedBooking({ id: data.booking.id, cancelToken: data.booking.cancelToken });
       setStep("success");
     } catch (e) {
       setError("Something went wrong. Please try again.");
@@ -472,6 +431,15 @@ export default function BookingWidget({
           <button type="button" onClick={handleAddToCalendar} className="btn btn-outline btn-sm w-full">
             Add to calendar (.ics)
           </button>
+
+          {confirmedBooking && (
+            <a
+              href={`/booking/${confirmedBooking.id}/cancel?token=${confirmedBooking.cancelToken}`}
+              className="block text-center text-sm text-base-content/50 hover:text-base-content underline underline-offset-2"
+            >
+              Need to cancel this booking?
+            </a>
+          )}
         </div>
       </div>
     );
@@ -578,14 +546,18 @@ export default function BookingWidget({
               ))}
             </div>
 
-            <div className="grid grid-cols-7 gap-1">
+            <div
+              className={`grid grid-cols-7 gap-1 transition-opacity ${
+                isLoadingCalendar ? "opacity-40" : "opacity-100"
+              }`}
+            >
               {weeks.flat().map((day, i) => {
                 if (!day) return <div key={`blank-${i}`} />;
 
                 const inRange = day >= todayStr && day <= maxDateStr;
                 // status 只當作視覺提示用,不拿來決定能不能點——精準的可預約時段
                 // 一律等使用者真的點下去之後,用三天合併過濾的邏輯去問,才是準的。
-                const status = availabilityMap.get(day); // undefined | "loading" | true | false
+                const status = availabilityMap.get(day); // undefined(還沒抓到/超出範圍) | true | false
                 const isSelected = day === selectedDate;
                 const isToday = day === todayStr;
                 const isClickable = inRange;
@@ -602,15 +574,12 @@ export default function BookingWidget({
                     }}
                     style={{
                       ...(isSelected ? { backgroundColor: brandColor, color: "white" } : undefined),
-                      ...(hasSlots
-                        ? { borderColor: brandColor, boxShadow: `inset 0 0 0 1px ${brandColor}` }
-                        : undefined),
                     }}
                     className={`relative aspect-square rounded-lg text-sm flex flex-col items-center justify-center transition-all border ${
                       isSelected
                         ? "shadow-md font-semibold border-transparent"
                         : hasSlots
-                        ? "hover:bg-base-300 active:scale-95 font-semibold"
+                        ? "border-success text-success hover:bg-success/10 active:scale-95 font-semibold"
                         : isClickable
                         ? "border-transparent hover:bg-base-300 active:scale-95 font-medium"
                         : "border-transparent text-base-content/25 cursor-default"
