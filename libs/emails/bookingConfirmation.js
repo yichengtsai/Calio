@@ -36,6 +36,7 @@ export function buildInviteeConfirmationEmail({
   meetingUrl,
   inviteeName,
   cancelUrl,
+  rescheduleUrl,
 }) {
   const when = formatWhen(startTime, endTime, timezone);
   const joinBlock = meetingUrl
@@ -59,7 +60,11 @@ export function buildInviteeConfirmationEmail({
 
     <p style="font-size: 14px;">Hi ${escapeHtml(inviteeName)}, you're all set — this has been added as confirmed.</p>
 
-    ${cancelUrl ? `<p style="font-size: 13px; margin-top: 20px;"><a href="${escapeHtml(cancelUrl)}" style="color: #6b7280;">Need to cancel? Click here</a></p>` : ""}
+    <p style="font-size: 13px; margin-top: 20px; color: #6b7280;">
+      ${rescheduleUrl ? `<a href="${escapeHtml(rescheduleUrl)}" style="color: #2563eb;">Reschedule</a>` : ""}
+      ${rescheduleUrl && cancelUrl ? " · " : ""}
+      ${cancelUrl ? `<a href="${escapeHtml(cancelUrl)}" style="color: #6b7280;">Cancel</a>` : ""}
+    </p>
   `);
 
   return { subject: `Confirmed: ${eventTitle} (${when})`, html };
@@ -110,7 +115,7 @@ export function buildOrganizerNotificationEmail({
 /**
  * 給預約人(invitee)的「已收到請求,等待審核」信
  */
-export function buildRequestReceivedEmail({ eventTitle, organizerName, startTime, endTime, timezone, inviteeName, cancelUrl }) {
+export function buildRequestReceivedEmail({ eventTitle, organizerName, startTime, endTime, timezone, inviteeName, cancelUrl, rescheduleUrl }) {
   const when = formatWhen(startTime, endTime, timezone);
 
   const html = wrapEmail(`
@@ -168,6 +173,7 @@ export function buildRescheduledEmail({
   timezone,
   inviteeName,
   cancelUrl,
+  rescheduleUrl,
 }) {
   const was = formatWhen(previousStartTime, previousEndTime, timezone);
   const now2 = formatWhen(startTime, endTime, timezone);
@@ -189,7 +195,11 @@ export function buildRescheduledEmail({
 
     <p style="font-size: 14px;">Hi ${escapeHtml(inviteeName)}, this booking has moved to a new time — it's still confirmed, no action needed.</p>
 
-    ${cancelUrl ? `<p style="font-size: 13px; margin-top: 20px;"><a href="${escapeHtml(cancelUrl)}" style="color: #6b7280;">Can't make the new time? Cancel here</a></p>` : ""}
+    <p style="font-size: 13px; margin-top: 20px; color: #6b7280;">
+      ${rescheduleUrl ? `<a href="${escapeHtml(rescheduleUrl)}" style="color: #2563eb;">Reschedule again</a>` : ""}
+      ${rescheduleUrl && cancelUrl ? " · " : ""}
+      ${cancelUrl ? `<a href="${escapeHtml(cancelUrl)}" style="color: #6b7280;">Cancel</a>` : ""}
+    </p>
   `);
 
   return { subject: `Rescheduled: ${eventTitle} (${now2})`, html };

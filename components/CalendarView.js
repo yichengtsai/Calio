@@ -20,7 +20,7 @@ function toLocalTimeInput(date) {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-const MEETING_COLOR_PRESETS = ["#0ea5e9","#6366f1","#8b5cf6","#ec4899","#ef4444","#f97316","#f59e0b","#84cc16","#22c55e","#14b8a6","#06b6d4","#3b82f6","#64748b","#0f172a"];
+const MEETING_COLOR_PRESETS = ["#6366f1", "#0ea5e9", "#22c55e", "#f59e0b", "#ef4444", "#ec4899", "#64748b"];
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const AVAILABLE_TINT = "#6366f1"; // 可預約時段固定用這個顏色標示,不跟著活動類型變動,才不會忽隱忽現

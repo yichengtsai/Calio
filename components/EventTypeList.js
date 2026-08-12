@@ -133,6 +133,20 @@ export default function EventTypeList() {
   return (
     <div className="space-y-3">
       {limitBanner}
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm text-base-content/55">
+          {eventTypes.length} event type{eventTypes.length === 1 ? "" : "s"}
+        </p>
+        {atFreeLimit ? (
+          <Link href="/#pricing" className="btn btn-primary btn-sm">
+            Upgrade to add more
+          </Link>
+        ) : (
+          <Link href="/dashboard/event-types/new" className="btn btn-primary btn-sm">
+            + New event type
+          </Link>
+        )}
+      </div>
       {eventTypes.map((et) => {
         const url = bookingUrl(et.slug);
         const isSharing = sharingId === et.id;

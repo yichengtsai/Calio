@@ -249,6 +249,7 @@ export async function PATCH(req, { params }) {
       meetingUrl: booking.meetingUrl,
       inviteeName: booking.inviteeName,
       cancelUrl: `${process.env.NEXT_PUBLIC_APP_URL}/booking/${booking.id}/cancel?token=${booking.cancelToken}`,
+      rescheduleUrl: `${process.env.NEXT_PUBLIC_APP_URL}/booking/${booking.id}/reschedule?token=${booking.cancelToken}`,
     });
   } else if (status === "declined") {
     emailPayload = buildDeclinedEmail({

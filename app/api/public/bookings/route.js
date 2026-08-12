@@ -156,6 +156,7 @@ export async function POST(req) {
     const reviewUrl = `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/bookings`;
     // 讓對方不用登入就能取消自己這筆預約的連結,靠 cancelToken 驗證身份
     const cancelUrl = `${process.env.NEXT_PUBLIC_APP_URL}/booking/${booking.id}/cancel?token=${booking.cancelToken}`;
+    const rescheduleUrl = `${process.env.NEXT_PUBLIC_APP_URL}/booking/${booking.id}/reschedule?token=${booking.cancelToken}`;
 
     if (eventType.requiresApproval) {
       // 需要審核:對方收到「請求已送出,等待審核」,主辦人收到「有一筆需要你審核」
@@ -171,6 +172,7 @@ export async function POST(req) {
             timezone: inviteeDisplayTimezone,
             inviteeName,
             cancelUrl,
+            rescheduleUrl,
           }),
         }),
         resend.emails.send({
@@ -237,6 +239,7 @@ export async function POST(req) {
             meetingUrl: booking.meetingUrl,
             inviteeName,
             cancelUrl,
+            rescheduleUrl,
           }),
         }),
         resend.emails.send({

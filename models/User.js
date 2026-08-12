@@ -79,6 +79,12 @@ const userSchema = mongoose.Schema(
       type: [String],
       default: [], // 個人區塊下方的小標籤,例如 "Product", "Consulting", "1:1"
     },
+    // Google Calendar 要納入 Free/Busy 計算的日曆 id 清單。
+    // 空陣列 / 未設定 = 只用 primary。可包含私人、工作等多本日曆。
+    googleCalendarIds: {
+      type: [String],
+      default: [],
+    },
     // Used in the Stripe webhook to identify the user in Stripe and later create Customer Portal or prefill user credit card details
     customerId: {
       type: String,

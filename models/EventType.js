@@ -20,6 +20,11 @@ const eventTypeSchema = new mongoose.Schema(
     description: { type: String, trim: true, maxlength: 500 },
     duration: { type: Number, required: true, min: 5 }, // 分鐘
     location: { type: String, trim: true }, // e.g. "Google Meet", "Phone call", 自訂文字都可以
+    locationType: {
+      type: String,
+      enum: ["google_meet", "in_person", "phone", "custom"],
+      default: "custom",
+    },
     color: { type: String, default: "#6366f1" }, // 預約頁上這個活動類型的識別色
     isActive: { type: Boolean, default: true }, // 關閉後預約頁上不會顯示,但歷史預約紀錄還在
     requiresApproval: { type: Boolean, default: true }, // true=有人預約先變pending要你Approve;false=送出就直接確認
@@ -27,6 +32,8 @@ const eventTypeSchema = new mongoose.Schema(
     minimumNoticeMinutes: { type: Number, default: 0, min: 0 }, // 最少要提前多久才能預約(分鐘)
     // 開始前幾分鐘寄一次提醒信給雙方,0 = 不寄提醒信
     reminderMinutesBefore: { type: Number, default: 30, min: 0 },
+    bookingWindowDays: { type: Number, default: 60, min: 1 }, // 最遠可預約天數
+    maxBookingsPerDay: { type: Number, default: 0, min: 0 }, // 0 = 不限制每日預約數
   },
   { timestamps: true, toJSON: { virtuals: true } }
 );

@@ -433,12 +433,20 @@ export default function BookingWidget({
           </button>
 
           {confirmedBooking && (
-            <a
-              href={`/booking/${confirmedBooking.id}/cancel?token=${confirmedBooking.cancelToken}`}
-              className="block text-center text-sm text-base-content/50 hover:text-base-content underline underline-offset-2"
-            >
-              Need to cancel this booking?
-            </a>
+            <div className="flex flex-col items-center gap-1.5">
+              <a
+                href={`/booking/${confirmedBooking.id}/reschedule?token=${confirmedBooking.cancelToken}`}
+                className="text-sm text-primary hover:underline underline-offset-2"
+              >
+                Reschedule this booking
+              </a>
+              <a
+                href={`/booking/${confirmedBooking.id}/cancel?token=${confirmedBooking.cancelToken}`}
+                className="text-sm text-base-content/50 hover:text-base-content underline underline-offset-2"
+              >
+                Cancel this booking
+              </a>
+            </div>
           )}
         </div>
       </div>

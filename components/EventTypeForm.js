@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 const DURATION_PRESETS = [15, 30, 45, 60];
-const COLOR_PRESETS = ["#0ea5e9","#6366f1","#8b5cf6","#ec4899","#ef4444","#f97316","#f59e0b","#84cc16","#22c55e","#14b8a6","#06b6d4","#3b82f6","#64748b","#0f172a"];
+const COLOR_PRESETS = ["#6366f1", "#0ea5e9", "#22c55e", "#f59e0b", "#ef4444", "#ec4899", "#64748b"];
 const REMINDER_PRESETS = [
   { label: "No reminder", value: 0 },
   { label: "10 minutes before", value: 10 },

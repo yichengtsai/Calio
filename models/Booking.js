@@ -46,6 +46,8 @@ const bookingSchema = new mongoose.Schema(
     // 對應到 organizer 的 Google Calendar 上的事件 id(Pro 版才會寫入)。
     // 有這個值代表這筆預約已經同步到 Google Calendar,改期/取消時要跟著更新/刪除那筆事件。
     googleEventId: { type: String },
+    // Google Meet 連結（建立會議時寫入，確認信與日曆詳情用）
+    meetingUrl: { type: String },
   },
   { timestamps: true, toJSON: { virtuals: true } }
 );
