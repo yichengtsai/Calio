@@ -203,8 +203,8 @@ export default function AvailabilityForm() {
                 key={d.value}
                 className={`px-5 py-3.5 transition-colors ${day.enabled ? "" : "opacity-60"}`}
               >
-                <div className="flex items-center gap-4">
-                  <label className="flex items-center gap-3 w-32 shrink-0 cursor-pointer">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+                  <label className="flex items-center gap-3 w-36 shrink-0 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={day.enabled}
@@ -217,19 +217,19 @@ export default function AvailabilityForm() {
                   {day.enabled ? (
                     <div className="flex-1 space-y-2">
                       {day.ranges.map((r, i) => (
-                        <div key={i} className="flex items-center gap-2">
+                        <div key={i} className="flex flex-wrap items-center gap-2">
                           <input
                             type="time"
                             value={r.startTime}
                             onChange={(e) => updateRange(d.value, i, "startTime", e.target.value)}
-                            className="input input-bordered input-sm w-[110px]"
+                            className="input input-bordered input-sm w-[9.5rem] min-w-[9.5rem] tabular-nums [&::-webkit-calendar-picker-indicator]:opacity-60"
                           />
-                          <span className="text-base-content/40 text-sm">–</span>
+                          <span className="text-base-content/40 text-sm shrink-0">–</span>
                           <input
                             type="time"
                             value={r.endTime}
                             onChange={(e) => updateRange(d.value, i, "endTime", e.target.value)}
-                            className="input input-bordered input-sm w-[110px]"
+                            className="input input-bordered input-sm w-[9.5rem] min-w-[9.5rem] tabular-nums [&::-webkit-calendar-picker-indicator]:opacity-60"
                           />
                           {day.ranges.length > 1 && (
                             <button

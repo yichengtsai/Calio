@@ -1,16 +1,17 @@
-import CalendarView from "@/components/CalendarView";
+import { Suspense } from "react";
+import DashboardHub from "@/components/DashboardHub";
 
 export default function Dashboard() {
   return (
-    <section className="space-y-6">
-      <div>
-        <h1 className="text-2xl md:text-3xl font-extrabold">Calendar</h1>
-        <p className="text-base-content/60 mt-1">
-          Everything on your schedule — bookings, your own events, and synced Google Calendar.
-        </p>
-      </div>
-
-      <CalendarView />
-    </section>
+    <Suspense
+      fallback={
+        <div className="space-y-4">
+          <div className="h-8 w-40 bg-base-200 rounded animate-pulse" />
+          <div className="h-64 bg-base-200 rounded-2xl animate-pulse" />
+        </div>
+      }
+    >
+      <DashboardHub />
+    </Suspense>
   );
 }

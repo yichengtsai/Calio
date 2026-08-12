@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 const DURATION_PRESETS = [15, 30, 45, 60];
-const COLOR_PRESETS = ["#6366f1", "#ef4444", "#22c55e", "#f59e0b", "#0ea5e9", "#ec4899"];
+const COLOR_PRESETS = ["#0ea5e9","#6366f1","#8b5cf6","#ec4899","#ef4444","#f97316","#f59e0b","#84cc16","#22c55e","#14b8a6","#06b6d4","#3b82f6","#64748b","#0f172a"];
 const REMINDER_PRESETS = [
   { label: "No reminder", value: 0 },
   { label: "10 minutes before", value: 10 },
@@ -203,6 +203,15 @@ export default function EventTypeForm({ eventTypeId }) {
                 color === c ? "ring-2 ring-offset-2 ring-offset-base-100 ring-base-content scale-110" : ""
               }`} aria-label={`Choose color ${c}`} />
           ))}
+          <label className="ml-1 flex items-center gap-1.5 text-xs text-base-content/50 cursor-pointer" title="Custom color">
+            <input
+              type="color"
+              value={color}
+              onChange={(e) => setColor(e.target.value)}
+              className="w-7 h-7 rounded-full border-0 p-0 cursor-pointer bg-transparent"
+            />
+            Custom
+          </label>
         </div>
       </div>
       <div>

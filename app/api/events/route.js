@@ -11,13 +11,11 @@ import {
 } from "@/libs/googleCalendar";
 
 export async function POST(req) {
-  // 1. 驗證登入狀態
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
   }
 
-  // 2. 簡單驗證輸入資料(沒有用 zod,先手動檢查必要欄位)
   const body = await req.json();
   const {
     title,
@@ -30,7 +28,8 @@ export async function POST(req) {
     color,
     participants,
     reminderMinutesBefore,
-    ignoreConflicts, // 使用者已經看過衝突警告,選擇「還是要建立」時前端會帶這個 true
+    ignoreConflicts,
+    createGoogleMeet, // true = 自動建立 Google Meet，寫入 meetingUrl 後再寄信
   } = body;
 
   if (!title || !startTime || !endTime || !participants?.length) {
@@ -49,12 +48,24 @@ export async function POST(req) {
     );
   }
 
+  const cleanedParticipants = participants
+    .filter((p) => p?.email && String(p.email).trim())
+    .map((p) => ({
+      email: String(p.email).trim().toLowerCase(),
+      name: p.name ? String(p.name).trim() : undefined,
+    }));
+
+  if (cleanedParticipants.length === 0) {
+    return NextResponse.json(
+      { error: "At least one participant email is required" },
+      { status: 400 }
+    );
+  }
+
   await connectMongo();
 
   const organizer = await User.findById(session.user.id);
 
-  // 3. 用 Google Free/Busy API 檢查主辦人這段時間是否已有其他行程
-  //    checked=false 代表沒連結 Google Calendar,不擋流程
   const { checked, conflicts } = await checkCalendarConflict(
     session.user.id,
     start,
@@ -72,69 +83,107 @@ export async function POST(req) {
     );
   }
 
-  // 4. 建立 Event(participants 是 embedded subdocuments)
   const event = await Event.create({
     title,
     description,
     startTime: start,
     endTime: end,
-    timezone: timezone || "Asia/Taipei",
-    location,
+    timezone: timezone || organizer?.timezone || "Asia/Taipei",
+    location: location || undefined,
     meetingUrl: meetingUrl || undefined,
     color: color || undefined,
     reminderMinutesBefore:
       reminderMinutesBefore !== undefined ? Number(reminderMinutesBefore) || 0 : 30,
     organizer: session.user.id,
-    participants: participants
-      .filter((p) => p.email)
-      .map((p) => ({ email: p.email, name: p.name })),
+    participants: cleanedParticipants,
   });
 
-  // 5. 逐一寄送通知信(單封失敗不中斷整體流程)
-  const emailResults = await Promise.allSettled(
-    event.participants.map(async (participant) => {
-      const confirmUrl = `${process.env.NEXT_PUBLIC_APP_URL}/events/${event._id}/confirm?participant=${participant._id}`;
-
-      const { subject, html } = buildEventNotificationEmail({
-        title: event.title,
-        description: event.description,
-        startTime: event.startTime,
-        endTime: event.endTime,
-        timezone: event.timezone,
-        location: event.location,
-        meetingUrl: event.meetingUrl,
-        organizerName: organizer?.name || organizer?.email,
-        participantName: participant.name,
-        confirmUrl,
-      });
-
-      await resend.emails.send({
-        from: EMAIL_FROM,
-        to: participant.email,
-        subject,
-        html,
-      });
-
-      participant.notifiedAt = new Date();
-    })
+  // 先同步 Google（可選建 Meet），再寄信，信裡才帶得到連結
+  let syncedToGoogleCalendar = false;
+  const wantMeet = Boolean(createGoogleMeet) && !event.meetingUrl;
+  const pushed = await pushEventToGoogleCalendar(
+    session.user.id,
+    {
+      title: event.title,
+      description: event.description,
+      location: event.location,
+      startTime: event.startTime,
+      endTime: event.endTime,
+      timezone: event.timezone,
+      participants: event.participants.map((p) => ({
+        email: p.email,
+        name: p.name,
+      })),
+    },
+    { createMeet: wantMeet }
   );
 
-  // 6. 寫回主辦人的 Google Calendar(失敗不影響已建立的行程,只是沒同步成功)
-  const googleEventId = await pushEventToGoogleCalendar(session.user.id, event);
-  if (googleEventId) {
-    event.googleEventId = googleEventId;
+  if (pushed) {
+    if (typeof pushed === "string") {
+      event.googleEventId = pushed;
+    } else {
+      event.googleEventId = pushed.id;
+      if (pushed.meetingUrl) {
+        event.meetingUrl = pushed.meetingUrl;
+      }
+    }
+    syncedToGoogleCalendar = Boolean(event.googleEventId);
+    await event.save();
   }
 
-  await event.save();
+  const eventId = event._id.toString();
+  const organizerSnapshot = {
+    name: organizer?.name || organizer?.email,
+  };
+  const participantsSnapshot = event.participants.map((p) => ({
+    _id: p._id?.toString(),
+    email: p.email,
+    name: p.name,
+  }));
+  const eventSnapshot = {
+    title: event.title,
+    description: event.description,
+    startTime: event.startTime,
+    endTime: event.endTime,
+    timezone: event.timezone,
+    location: event.location,
+    meetingUrl: event.meetingUrl,
+  };
 
-  const failedCount = emailResults.filter((r) => r.status === "rejected").length;
+  // 信不要擋回應：先回前端，背景再寄
+  after(async () => {
+    await Promise.allSettled(
+      participantsSnapshot.map(async (participant) => {
+        const confirmUrl = `${process.env.NEXT_PUBLIC_APP_URL}/events/${eventId}/confirm?participant=${participant._id || ""}`;
+        const { subject, html } = buildEventNotificationEmail({
+          title: eventSnapshot.title,
+          description: eventSnapshot.description,
+          startTime: eventSnapshot.startTime,
+          endTime: eventSnapshot.endTime,
+          timezone: eventSnapshot.timezone,
+          location: eventSnapshot.location,
+          meetingUrl: eventSnapshot.meetingUrl,
+          organizerName: organizerSnapshot.name,
+          participantName: participant.name,
+          confirmUrl,
+        });
+        await resend.emails.send({
+          from: EMAIL_FROM,
+          to: participant.email,
+          subject,
+          html,
+        });
+      })
+    );
+  });
 
   return NextResponse.json(
     {
       event,
-      emailsSent: event.participants.length - failedCount,
-      emailsFailed: failedCount,
-      syncedToGoogleCalendar: Boolean(googleEventId),
+      emailsSent: participantsSnapshot.length,
+      emailsFailed: 0,
+      syncedToGoogleCalendar,
+      meetingUrl: event.meetingUrl || null,
     },
     { status: 201 }
   );

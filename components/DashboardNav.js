@@ -2,23 +2,14 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 
 const SECTIONS = [
   {
     label: "Main",
     items: [
-      { name: "Calendar", href: "/dashboard" },
-      { name: "Bookings", href: "/dashboard/bookings", badgeKey: "pending" },
+      { name: "Calendar", href: "/dashboard", match: (p, tab) => p === "/dashboard" },
       { name: "Insights", href: "/dashboard/insights" },
-    ],
-  },
-  {
-    label: "Setup",
-    items: [
-      { name: "Availability", href: "/dashboard/availability" },
-      { name: "Event Types", href: "/dashboard/event-types" },
-      { name: "Team Events", href: "/dashboard/events" },
     ],
   },
   {
@@ -32,6 +23,7 @@ const SECTIONS = [
 
 export default function DashboardNav() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [pendingCount, setPendingCount] = useState(0);
 
   useEffect(() => {
@@ -42,7 +34,7 @@ export default function DashboardNav() {
         setPendingCount(count);
       })
       .catch(() => {});
-  }, [pathname]); // 換頁時重新抓一次,才能反映剛審核完的變化
+  }, [pathname]);
 
   return (
     <nav className="flex-1 px-3 py-4 space-y-5">
@@ -53,8 +45,9 @@ export default function DashboardNav() {
           </p>
           <div className="space-y-0.5">
             {section.items.map((item) => {
-              const isActive = pathname === item.href;
-              const badge = item.badgeKey === "pending" ? pendingCount : 0;
+              const isActive = item.match
+                ? item.match(pathname, searchParams.get("tab"))
+                : pathname === item.href || pathname.startsWith(item.href + "/");
 
               return (
                 <Link
@@ -70,9 +63,9 @@ export default function DashboardNav() {
                     <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-primary" />
                   )}
                   <span>{item.name}</span>
-                  {badge > 0 && (
+                  {item.name === "Calendar" && pendingCount > 0 && (
                     <span className="badge badge-warning badge-sm text-[10px] font-bold">
-                      {badge}
+                      {pendingCount}
                     </span>
                   )}
                 </Link>

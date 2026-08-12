@@ -7,6 +7,21 @@ import ConfirmDialog from "./ConfirmDialog";
 const DEFAULT_HOUR_START = 8;
 const DEFAULT_HOUR_END = 18;
 const HOUR_HEIGHT = 56;
+
+function toLocalDateInput(date) {
+  const d = new Date(date);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function toLocalTimeInput(date) {
+  const d = new Date(date);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+const MEETING_COLOR_PRESETS = ["#0ea5e9","#6366f1","#8b5cf6","#ec4899","#ef4444","#f97316","#f59e0b","#84cc16","#22c55e","#14b8a6","#06b6d4","#3b82f6","#64748b","#0f172a"];
+
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const AVAILABLE_TINT = "#6366f1"; // 可預約時段固定用這個顏色標示,不跟著活動類型變動,才不會忽隱忽現
 
@@ -39,6 +54,43 @@ function addDays(date, days) {
 function isSameDay(a, b) {
   return a.toDateString() === b.toDateString();
 }
+
+function freeSegmentsForDay(day, dayRules, dayItems, hourStart, hourEnd) {
+  // dayRules: availability windows; dayItems: busy blocks on calendar
+  const dayStart = new Date(day);
+  dayStart.setHours(0, 0, 0, 0);
+  const segments = [];
+  for (const rule of dayRules) {
+    const [sh, sm] = String(rule.startTime || "09:00").split(":").map(Number);
+    const [eh, em] = String(rule.endTime || "17:00").split(":").map(Number);
+    let windows = [[sh + sm / 60, eh + em / 60]];
+    for (const item of dayItems) {
+      const s = new Date(item.startTime);
+      const e = new Date(item.endTime);
+      if (!isSameDay(s, day) && !isSameDay(e, day)) continue;
+      const startH = s.getHours() + s.getMinutes() / 60;
+      const endH = e.getHours() + e.getMinutes() / 60;
+      const next = [];
+      for (const [ws, we] of windows) {
+        if (endH <= ws || startH >= we) {
+          next.push([ws, we]);
+        } else {
+          if (startH > ws) next.push([ws, Math.max(ws, startH)]);
+          if (endH < we) next.push([Math.min(we, endH), we]);
+        }
+      }
+      windows = next.filter(([a, b]) => b - a >= 0.25);
+    }
+    for (const [a, b] of windows) {
+      const from = Math.max(a, hourStart);
+      const to = Math.min(b, hourEnd);
+      if (to > from) segments.push({ startHour: from, endHour: to });
+    }
+  }
+  return segments;
+}
+
+
 
 function dateToStr(date) {
   const y = date.getFullYear();
@@ -85,14 +137,34 @@ export default function CalendarView() {
   const [yearOffset, setYearOffset] = useState(0);
   const [now, setNow] = useState(new Date());
   const [selectedItem, setSelectedItem] = useState(null);
+  const [editingItem, setEditingItem] = useState(null); // item being edited in modal
+  const [editForm, setEditForm] = useState({
+    title: "",
+    date: "",
+    startTime: "09:00",
+    endTime: "10:00",
+    notes: "",
+    location: "",
+    color: "#0ea5e9",
+    useGoogleMeet: false,
+    participants: [{ email: "", name: "" }],
+  });
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [editError, setEditError] = useState(null);
   const [isCancelling, setIsCancelling] = useState(false);
   const [showBlockForm, setShowBlockForm] = useState(false);
+  // createKind: "block" = 個人忙碌, "meeting" = 會議(可邀請人)
+  const [createKind, setCreateKind] = useState("block");
   const [blockForm, setBlockForm] = useState({
     title: "",
     date: "",
     startTime: "09:00",
     endTime: "10:00",
     notes: "",
+    location: "",
+    color: "#0ea5e9",
+    useGoogleMeet: true,
+    participants: [{ email: "", name: "" }],
   });
   const [isSavingBlock, setIsSavingBlock] = useState(false);
   const [blockError, setBlockError] = useState(null);
@@ -195,20 +267,38 @@ export default function CalendarView() {
     }
   }
 
-  async function handleCreateBlock(e) {
-    e.preventDefault();
+  function findLocalConflicts(startIso, endIso) {
+    const start = new Date(startIso).getTime();
+    const end = new Date(endIso).getTime();
+    return (items || []).filter((item) => {
+      if (item.status === "cancelled") return false;
+      const s = new Date(item.startTime).getTime();
+      const e = new Date(item.endTime).getTime();
+      return start < e && end > s;
+    });
+  }
+
+  function resetCreateForm() {
+    setBlockForm({
+      title: "",
+      date: "",
+      startTime: "09:00",
+      endTime: "10:00",
+      notes: "",
+      location: "",
+      color: "#0ea5e9",
+      useGoogleMeet: true,
+      participants: [{ email: "", name: "" }],
+    });
+    setCreateKind("block");
     setBlockError(null);
+  }
 
-    if (!blockForm.date || !blockForm.startTime || !blockForm.endTime) {
-      setBlockError("Date, start time, and end time are required");
-      return;
-    }
+  async function submitCreate({ ignoreConflicts = false } = {}) {
+    const startTime = new Date(`${blockForm.date}T${blockForm.startTime}:00`).toISOString();
+    const endTime = new Date(`${blockForm.date}T${blockForm.endTime}:00`).toISOString();
 
-    setIsSavingBlock(true);
-    try {
-      const startTime = new Date(`${blockForm.date}T${blockForm.startTime}:00`).toISOString();
-      const endTime = new Date(`${blockForm.date}T${blockForm.endTime}:00`).toISOString();
-
+    if (createKind === "block") {
       const res = await fetch("/api/blocks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -219,7 +309,105 @@ export default function CalendarView() {
           endTime,
         }),
       });
-      const data = await res.json();
+      return { res, data: await res.json() };
+    }
+
+    const participants = (blockForm.participants || [])
+      .map((p) => ({
+        email: (p.email || "").trim(),
+        name: (p.name || "").trim() || undefined,
+      }))
+      .filter((p) => p.email);
+
+    if (participants.length === 0) {
+      return {
+        res: { ok: false, status: 400 },
+        data: { error: "Add at least one participant email" },
+      };
+    }
+
+    const res = await fetch("/api/events", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: blockForm.title || "Meeting",
+        description: blockForm.notes || undefined,
+        startTime,
+        endTime,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        location: blockForm.useGoogleMeet ? "Google Meet" : blockForm.location || undefined,
+        color: blockForm.color || undefined,
+        participants,
+        createGoogleMeet: Boolean(blockForm.useGoogleMeet),
+        ignoreConflicts,
+      }),
+    });
+    return { res, data: await res.json() };
+  }
+
+  async function handleCreateBlock(e) {
+    e.preventDefault();
+    setBlockError(null);
+
+    if (!blockForm.date || !blockForm.startTime || !blockForm.endTime) {
+      setBlockError("Date, start time, and end time are required");
+      return;
+    }
+
+    const startTime = new Date(`${blockForm.date}T${blockForm.startTime}:00`);
+    const endTime = new Date(`${blockForm.date}T${blockForm.endTime}:00`);
+    if (!(endTime > startTime)) {
+      setBlockError("End time must be after start time");
+      return;
+    }
+
+    if (createKind === "meeting") {
+      const hasEmail = (blockForm.participants || []).some((p) => (p.email || "").trim());
+      if (!hasEmail) {
+        setBlockError("Add at least one participant email for a meeting");
+        return;
+      }
+    }
+
+    // 本地日曆已有重疊 → 先請使用者確認
+    const localConflicts = findLocalConflicts(startTime.toISOString(), endTime.toISOString());
+    if (localConflicts.length > 0) {
+      const names = localConflicts
+        .slice(0, 3)
+        .map((c) => c.title || "Busy")
+        .join(", ");
+      setConfirmState({
+        title: "This time overlaps existing items",
+        description: `Conflicts with: ${names}${localConflicts.length > 3 ? "…" : ""}. Create anyway?`,
+        confirmLabel: "Create anyway",
+        danger: false,
+        onConfirm: () => doCreate({ ignoreConflicts: true }),
+      });
+      return;
+    }
+
+    await doCreate({ ignoreConflicts: false });
+  }
+
+  async function doCreate({ ignoreConflicts = false } = {}) {
+    setIsSavingBlock(true);
+    setBlockError(null);
+    try {
+      const { res, data } = await submitCreate({ ignoreConflicts });
+
+      // Google Calendar 衝突（僅會議）
+      if (res.status === 409 && !ignoreConflicts) {
+        setConfirmState({
+          title: "Google Calendar has something here",
+          description:
+            data.message ||
+            "This time overlaps an event on your Google Calendar. Create anyway?",
+          confirmLabel: "Create anyway",
+          danger: false,
+          onConfirm: () => doCreate({ ignoreConflicts: true }),
+        });
+        return;
+      }
 
       if (!res.ok) {
         setBlockError(data.error || "Failed to save");
@@ -227,8 +415,12 @@ export default function CalendarView() {
       }
 
       setShowBlockForm(false);
-      setBlockForm({ title: "", date: "", startTime: "09:00", endTime: "10:00", notes: "" });
-      toast.success("Added to your calendar");
+      resetCreateForm();
+      toast.success(
+        createKind === "meeting"
+          ? `Meeting created${data.emailsSent ? ` — ${data.emailsSent} invited` : ""}`
+          : "Added to your calendar"
+      );
       await loadSchedule();
     } catch (err) {
       setBlockError("Something went wrong. Please try again.");
@@ -244,6 +436,133 @@ export default function CalendarView() {
       danger: true,
       onConfirm: () => doDeleteBlock(item),
     });
+  }
+
+  function openEdit(item) {
+    if (!item || item.source === "google") return;
+    if (item.source === "booking" && item.status === "pending") {
+      toast.error("Approve the booking before changing its time");
+      return;
+    }
+    setEditError(null);
+    setEditingItem(item);
+    const hasMeet = Boolean(item.meetingUrl) || /google meet/i.test(item.location || "");
+    setEditForm({
+      title: item.title || "",
+      date: toLocalDateInput(item.startTime),
+      startTime: toLocalTimeInput(item.startTime),
+      endTime: toLocalTimeInput(item.endTime),
+      notes: item.notes || item.description || item.inviteeNotes || "",
+      location: item.location || "",
+      color: item.color || "#0ea5e9",
+      useGoogleMeet: hasMeet,
+      participants:
+        item.participants?.length > 0
+          ? item.participants.map((p) => ({
+              email: p.email || "",
+              name: p.name || "",
+            }))
+          : [{ email: "", name: "" }],
+    });
+    setSelectedItem(null);
+  }
+
+  async function handleSaveEdit(e) {
+    e.preventDefault();
+    if (!editingItem) return;
+    setEditError(null);
+
+    if (!editForm.date || !editForm.startTime || !editForm.endTime) {
+      setEditError("Date, start, and end are required");
+      return;
+    }
+
+    const startTime = new Date(`${editForm.date}T${editForm.startTime}:00`).toISOString();
+    const endTime = new Date(`${editForm.date}T${editForm.endTime}:00`).toISOString();
+    if (new Date(endTime) <= new Date(startTime)) {
+      setEditError("End time must be after start time");
+      return;
+    }
+
+    setIsSavingEdit(true);
+    try {
+      let res;
+      if (editingItem.source === "block") {
+        res = await fetch(`/api/blocks/${editingItem.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: editForm.title || "Busy",
+            notes: editForm.notes || undefined,
+            startTime,
+            endTime,
+            color: editForm.color,
+          }),
+        });
+      } else if (editingItem.source === "event") {
+        const participants = (editForm.participants || [])
+          .map((p) => ({
+            email: (p.email || "").trim(),
+            name: (p.name || "").trim() || undefined,
+          }))
+          .filter((p) => p.email);
+        if (participants.length === 0) {
+          setEditError("Add at least one participant email");
+          setIsSavingEdit(false);
+          return;
+        }
+        res = await fetch(`/api/events/${editingItem.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: editForm.title || "Meeting",
+            description: editForm.notes || undefined,
+            location: editForm.useGoogleMeet
+              ? "Google Meet"
+              : editForm.location || undefined,
+            color: editForm.color,
+            startTime,
+            endTime,
+            participants,
+            createGoogleMeet: Boolean(editForm.useGoogleMeet && !editingItem.meetingUrl),
+          }),
+        });
+      } else if (editingItem.source === "booking") {
+        // 預約改期：時間；標題由 event type 決定不能改
+        res = await fetch(`/api/bookings/${editingItem.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ startTime, endTime }),
+        });
+      } else {
+        setEditError("This item cannot be edited here");
+        return;
+      }
+
+      const data = await res.json();
+      if (!res.ok) {
+        setEditError(data.error || "Failed to save changes");
+        return;
+      }
+
+      setEditingItem(null);
+      if (editingItem.source === "booking") {
+        toast.success("Booking rescheduled");
+      } else if (editingItem.source === "event") {
+        const parts = [];
+        if (data.addedCount) parts.push(`${data.addedCount} invited`);
+        if (data.removedCount) parts.push(`${data.removedCount} removed (notified)`);
+        if (data.emailsSent && !parts.length) parts.push(`${data.emailsSent} notified`);
+        toast.success(parts.length ? `Saved — ${parts.join(", ")}` : "Saved");
+      } else {
+        toast.success("Saved");
+      }
+      await loadSchedule();
+    } catch (err) {
+      setEditError("Something went wrong. Please try again.");
+    } finally {
+      setIsSavingEdit(false);
+    }
   }
 
   async function doDeleteBlock(item) {
@@ -550,7 +869,7 @@ export default function CalendarView() {
           </span>
           {(view === "day" || view === "week") && (
             <span className="hidden md:inline text-[11px] text-base-content/40">
-              Tip: drag on the grid to block off time
+              Tip: drag on the grid to add time — or use + Add for meeting / busy
             </span>
           )}
           <button
@@ -754,14 +1073,14 @@ export default function CalendarView() {
                     />
                   )}
 
-                  {/* 可預約時段:淺色底 + 虛線邊框,取代原本幾乎看不見的深綠色 */}
-                  {dayRules.map((rule, i) => (
+                  {/* 可預約時段：扣掉日曆上已有行程後才顯示，與實際可約同步 */}
+                  {freeSegmentsForDay(day, dayRules, dayItems, hourStart, hourEnd).map((seg, i) => (
                     <div
                       key={i}
-                      className="absolute left-0.5 right-0.5 rounded-sm border border-dashed group"
+                      className="absolute left-0.5 right-0.5 rounded-sm border border-dashed group pointer-events-none"
                       style={{
-                        top: `${Math.max(0, (timeStrToHour(rule.startTime) - hourStart) * HOUR_HEIGHT)}px`,
-                        height: `${(timeStrToHour(rule.endTime) - timeStrToHour(rule.startTime)) * HOUR_HEIGHT}px`,
+                        top: `${Math.max(0, (seg.startHour - hourStart) * HOUR_HEIGHT)}px`,
+                        height: `${Math.max(4, (seg.endHour - seg.startHour) * HOUR_HEIGHT)}px`,
                         backgroundColor: hexToRgba(AVAILABLE_TINT, 0.07),
                         borderColor: hexToRgba(AVAILABLE_TINT, 0.35),
                       }}
@@ -951,14 +1270,23 @@ export default function CalendarView() {
                 Synced from Google Calendar — manage it there.
               </p>
             ) : selectedItem.source === "block" ? (
-              <button
-                type="button"
-                onClick={() => handleDeleteBlock(selectedItem)}
-                disabled={isCancelling}
-                className="btn btn-outline btn-error btn-sm w-full"
-              >
-                {isCancelling ? "Removing…" : "Remove"}
-              </button>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => openEdit(selectedItem)}
+                  className="btn btn-primary btn-sm flex-1"
+                >
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDeleteBlock(selectedItem)}
+                  disabled={isCancelling}
+                  className="btn btn-outline btn-error btn-sm flex-1"
+                >
+                  {isCancelling ? "Removing…" : "Remove"}
+                </button>
+              </div>
             ) : selectedItem.status === "pending" ? (
               <div className="flex gap-2">
                 <button
@@ -979,41 +1307,323 @@ export default function CalendarView() {
                 </button>
               </div>
             ) : (
-              <button
-                type="button"
-                onClick={() => handleCancel(selectedItem)}
-                disabled={isCancelling}
-                className="btn btn-outline btn-error btn-sm w-full"
-              >
-                {isCancelling ? "Cancelling…" : "Cancel this"}
-              </button>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => openEdit(selectedItem)}
+                  className="btn btn-primary btn-sm flex-1"
+                >
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleCancel(selectedItem)}
+                  disabled={isCancelling}
+                  className="btn btn-outline btn-error btn-sm flex-1"
+                >
+                  {isCancelling ? "Cancelling…" : "Cancel"}
+                </button>
+              </div>
             )}
           </div>
+        </div>
+      )}
+
+
+      {editingItem && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-opacity"
+          onClick={() => setEditingItem(null)}
+        >
+          <form
+            onSubmit={handleSaveEdit}
+            className="bg-base-100 border border-base-300 rounded-2xl max-w-md w-full p-6 space-y-4 animate-popup max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between">
+              <div>
+                <h2 className="font-bold text-lg">Edit</h2>
+                <p className="text-xs text-base-content/50 mt-0.5">
+                  {editingItem.source === "booking"
+                    ? "Reschedule this booking (guest will be notified)"
+                    : editingItem.source === "event"
+                      ? "Update meeting — participants are notified if details change"
+                      : "Update your personal block"}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingItem(null)}
+                className="text-base-content/40 hover:text-base-content"
+              >
+                ✕
+              </button>
+            </div>
+
+            {editingItem.source !== "booking" && (
+              <div>
+                <label className="block text-sm font-medium text-base-content/80 mb-1">Title</label>
+                <input
+                  type="text"
+                  value={editForm.title}
+                  onChange={(e) => setEditForm((f) => ({ ...f, title: e.target.value }))}
+                  className="input input-bordered input-sm w-full"
+                />
+              </div>
+            )}
+
+            {editingItem.source === "booking" && (
+              <p className="text-sm font-medium">{editingItem.title}</p>
+            )}
+
+            <div>
+              <label className="block text-sm font-medium text-base-content/80 mb-1">Date</label>
+              <input
+                type="date"
+                required
+                value={editForm.date}
+                onChange={(e) => setEditForm((f) => ({ ...f, date: e.target.value }))}
+                className="input input-bordered input-sm w-full"
+              />
+            </div>
+
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <label className="block text-sm font-medium text-base-content/80 mb-1">Start</label>
+                <input
+                  type="time"
+                  required
+                  value={editForm.startTime}
+                  onChange={(e) => setEditForm((f) => ({ ...f, startTime: e.target.value }))}
+                  className="input input-bordered input-sm w-full"
+                />
+              </div>
+              <div className="flex-1">
+                <label className="block text-sm font-medium text-base-content/80 mb-1">End</label>
+                <input
+                  type="time"
+                  required
+                  value={editForm.endTime}
+                  onChange={(e) => setEditForm((f) => ({ ...f, endTime: e.target.value }))}
+                  className="input input-bordered input-sm w-full"
+                />
+              </div>
+            </div>
+
+            {editingItem.source === "event" && (
+              <>
+                <label className="flex items-start gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="checkbox checkbox-sm mt-0.5"
+                    checked={Boolean(editForm.useGoogleMeet)}
+                    onChange={(e) =>
+                      setEditForm((f) => ({ ...f, useGoogleMeet: e.target.checked }))
+                    }
+                  />
+                  <span>
+                    Online — Google Meet
+                    <span className="block text-xs text-base-content/45 mt-0.5 font-normal">
+                      {editingItem.meetingUrl
+                        ? "Already has a Meet link; keep checked to keep it as online."
+                        : "Check to create a Meet link and include it in emails."}
+                    </span>
+                  </span>
+                </label>
+
+                {!editForm.useGoogleMeet && (
+                  <div>
+                    <label className="block text-sm font-medium text-base-content/80 mb-1">
+                      Location
+                    </label>
+                    <input
+                      type="text"
+                      value={editForm.location}
+                      onChange={(e) => setEditForm((f) => ({ ...f, location: e.target.value }))}
+                      className="input input-bordered input-sm w-full"
+                      placeholder="Office or custom link"
+                    />
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium text-base-content/80">Participants</label>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-xs"
+                      onClick={() =>
+                        setEditForm((f) => ({
+                          ...f,
+                          participants: [...(f.participants || []), { email: "", name: "" }],
+                        }))
+                      }
+                    >
+                      + Add
+                    </button>
+                  </div>
+                  {(editForm.participants || []).map((person, index) => (
+                    <div key={index} className="flex gap-2 items-start">
+                      <input
+                        type="email"
+                        required={index === 0}
+                        value={person.email}
+                        onChange={(e) =>
+                          setEditForm((f) => ({
+                            ...f,
+                            participants: f.participants.map((row, i) =>
+                              i === index ? { ...row, email: e.target.value } : row
+                            ),
+                          }))
+                        }
+                        className="input input-bordered input-sm flex-1"
+                        placeholder="email@example.com"
+                      />
+                      <input
+                        type="text"
+                        value={person.name || ""}
+                        onChange={(e) =>
+                          setEditForm((f) => ({
+                            ...f,
+                            participants: f.participants.map((row, i) =>
+                              i === index ? { ...row, name: e.target.value } : row
+                            ),
+                          }))
+                        }
+                        className="input input-bordered input-sm w-24"
+                        placeholder="Name"
+                      />
+                      {(editForm.participants || []).length > 1 && (
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-xs text-error"
+                          onClick={() =>
+                            setEditForm((f) => ({
+                              ...f,
+                              participants: f.participants.filter((_, i) => i !== index),
+                            }))
+                          }
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  <p className="text-[11px] text-base-content/45">
+                    New people get an invite email; removed people get a cancellation email.
+                  </p>
+                </div>
+              </>
+            )}
+
+            {editingItem.source !== "booking" && (
+              <div>
+                <label className="block text-sm font-medium text-base-content/80 mb-1">
+                  {editingItem.source === "event" ? "Description" : "Notes"} (optional)
+                </label>
+                <textarea
+                  value={editForm.notes}
+                  onChange={(e) => setEditForm((f) => ({ ...f, notes: e.target.value }))}
+                  rows={2}
+                  className="textarea textarea-bordered textarea-sm w-full"
+                />
+              </div>
+            )}
+
+            {(editingItem.source === "event" || editingItem.source === "block") && (
+              <div>
+                <label className="block text-sm font-medium text-base-content/80 mb-2">Color</label>
+                <div className="flex gap-2 flex-wrap">
+                  {MEETING_COLOR_PRESETS.map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setEditForm((f) => ({ ...f, color: c }))}
+                      style={{ backgroundColor: c }}
+                      className={`w-7 h-7 rounded-full ${
+                        editForm.color === c
+                          ? "ring-2 ring-offset-2 ring-offset-base-100 ring-base-content scale-110"
+                          : ""
+                      }`}
+                    />
+                  ))}
+                  <label className="flex items-center" title="Custom color">
+                    <input
+                      type="color"
+                      value={editForm.color || "#0ea5e9"}
+                      onChange={(e) => setEditForm((f) => ({ ...f, color: e.target.value }))}
+                      className="w-7 h-7 rounded-full border-0 p-0 cursor-pointer bg-transparent"
+                    />
+                  </label>
+                </div>
+              </div>
+            )}
+
+            {editError && <p className="text-sm text-error">{editError}</p>}
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setEditingItem(null)}
+                className="btn btn-ghost btn-sm flex-1"
+              >
+                Cancel
+              </button>
+              <button type="submit" disabled={isSavingEdit} className="btn btn-primary btn-sm flex-1">
+                {isSavingEdit ? "Saving…" : "Save changes"}
+              </button>
+            </div>
+          </form>
         </div>
       )}
 
       {showBlockForm && (
         <div
           className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-opacity"
-          onClick={() => setShowBlockForm(false)}
+          onClick={() => {
+            setShowBlockForm(false);
+            resetCreateForm();
+          }}
         >
           <form
             onSubmit={handleCreateBlock}
-            className="bg-base-100 border border-base-300 rounded-2xl max-w-sm w-full p-6 space-y-4 animate-popup"
+            className="bg-base-100 border border-base-300 rounded-2xl max-w-md w-full p-6 space-y-4 animate-popup max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start justify-between">
-              <h2 className="font-bold text-lg">Block your time</h2>
+              <h2 className="font-bold text-lg">Add to calendar</h2>
               <button
                 type="button"
-                onClick={() => setShowBlockForm(false)}
+                onClick={() => {
+                  setShowBlockForm(false);
+                  resetCreateForm();
+                }}
                 className="text-base-content/40 hover:text-base-content"
               >
                 ✕
               </button>
             </div>
-            <p className="text-xs text-base-content/50 -mt-2">
-              For your own personal time — nobody is invited, and this time won&apos;t show up as available on your booking page.
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setCreateKind("block")}
+                className={`btn btn-sm flex-1 ${createKind === "block" ? "btn-primary" : "btn-outline"}`}
+              >
+                Personal / Busy
+              </button>
+              <button
+                type="button"
+                onClick={() => setCreateKind("meeting")}
+                className={`btn btn-sm flex-1 ${createKind === "meeting" ? "btn-primary" : "btn-outline"}`}
+              >
+                Meeting
+              </button>
+            </div>
+            <p className="text-xs text-base-content/50 -mt-1">
+              {createKind === "block"
+                ? "Blocks the time on your booking page. No one is invited."
+                : "Creates a meeting, emails participants, and can sync to Google Calendar."}
             </p>
 
             <div>
@@ -1023,7 +1633,7 @@ export default function CalendarView() {
                 value={blockForm.title}
                 onChange={(e) => setBlockForm((f) => ({ ...f, title: e.target.value }))}
                 className="input input-bordered input-sm w-full"
-                placeholder="Busy"
+                placeholder={createKind === "meeting" ? "Team sync" : "Busy"}
               />
             </div>
 
@@ -1061,6 +1671,136 @@ export default function CalendarView() {
               </div>
             </div>
 
+            {createKind === "meeting" && (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-base-content/80 mb-2">Color</label>
+                  <div className="flex gap-2 flex-wrap">
+                    {MEETING_COLOR_PRESETS.map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() => setBlockForm((f) => ({ ...f, color: c }))}
+                        style={{ backgroundColor: c }}
+                        className={`w-7 h-7 rounded-full transition-transform ${
+                          blockForm.color === c
+                            ? "ring-2 ring-offset-2 ring-offset-base-100 ring-base-content scale-110"
+                            : ""
+                        }`}
+                        aria-label={`Color ${c}`}
+                      />
+                    ))}
+                    <label className="flex items-center" title="Custom color">
+                      <input
+                        type="color"
+                        value={blockForm.color || "#0ea5e9"}
+                        onChange={(e) => setBlockForm((f) => ({ ...f, color: e.target.value }))}
+                        className="w-7 h-7 rounded-full border-0 p-0 cursor-pointer bg-transparent"
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium text-base-content/80">Participants</label>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-xs"
+                      onClick={() =>
+                        setBlockForm((f) => ({
+                          ...f,
+                          participants: [...(f.participants || []), { email: "", name: "" }],
+                        }))
+                      }
+                    >
+                      + Add
+                    </button>
+                  </div>
+                  {(blockForm.participants || []).map((p, index) => (
+                    <div key={index} className="flex gap-2 items-start">
+                      <input
+                        type="email"
+                        required={index === 0}
+                        value={p.email}
+                        onChange={(e) =>
+                          setBlockForm((f) => ({
+                            ...f,
+                            participants: f.participants.map((row, i) =>
+                              i === index ? { ...row, email: e.target.value } : row
+                            ),
+                          }))
+                        }
+                        className="input input-bordered input-sm flex-1"
+                        placeholder="email@example.com"
+                      />
+                      <input
+                        type="text"
+                        value={p.name || ""}
+                        onChange={(e) =>
+                          setBlockForm((f) => ({
+                            ...f,
+                            participants: f.participants.map((row, i) =>
+                              i === index ? { ...row, name: e.target.value } : row
+                            ),
+                          }))
+                        }
+                        className="input input-bordered input-sm w-28"
+                        placeholder="Name"
+                      />
+                      {(blockForm.participants || []).length > 1 && (
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-xs text-error"
+                          onClick={() =>
+                            setBlockForm((f) => ({
+                              ...f,
+                              participants: f.participants.filter((_, i) => i !== index),
+                            }))
+                          }
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                <label className="flex items-start gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="checkbox checkbox-sm mt-0.5"
+                    checked={Boolean(blockForm.useGoogleMeet)}
+                    onChange={(e) =>
+                      setBlockForm((f) => ({ ...f, useGoogleMeet: e.target.checked }))
+                    }
+                  />
+                  <span>
+                    Online — create Google Meet link (sent in invite email)
+                    <span className="block text-xs text-base-content/45 mt-0.5 font-normal">
+                      The link stays with this calendar event; it does not expire after a few hours.
+                      If you delete the event, the Meet room is removed too.
+                    </span>
+                  </span>
+                </label>
+
+                {!blockForm.useGoogleMeet && (
+                  <div>
+                    <label className="block text-sm font-medium text-base-content/80 mb-1">
+                      Location (optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={blockForm.location}
+                      onChange={(e) => setBlockForm((f) => ({ ...f, location: e.target.value }))}
+                      className="input input-bordered input-sm w-full"
+                      placeholder="Office address or Zoom link"
+                    />
+                  </div>
+                )}
+              </>
+            )}
+
             <div>
               <label className="block text-sm font-medium text-base-content/80 mb-1">
                 Notes (optional)
@@ -1076,7 +1816,11 @@ export default function CalendarView() {
             {blockError && <p className="text-sm text-error">{blockError}</p>}
 
             <button type="submit" disabled={isSavingBlock} className="btn btn-primary btn-sm w-full">
-              {isSavingBlock ? "Saving…" : "Add to calendar"}
+              {isSavingBlock
+                ? "Saving…"
+                : createKind === "meeting"
+                  ? "Create meeting"
+                  : "Block time"}
             </button>
           </form>
         </div>

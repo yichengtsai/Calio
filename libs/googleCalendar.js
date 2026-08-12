@@ -106,13 +106,18 @@ export async function checkCalendarConflict(userId, startTime, endTime) {
   try {
     const calendarIds = await resolveCalendarIds(userId);
 
-    const res = await calendar.freebusy.query({
+    const freebusyPromise = calendar.freebusy.query({
       requestBody: {
         timeMin: startTime.toISOString(),
         timeMax: endTime.toISOString(),
         items: calendarIds.map((id) => ({ id })),
       },
     });
+    // 避免 Google API 卡住拖慢整個建立/取消流程
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("freebusy timeout")), 8000)
+    );
+    const res = await Promise.race([freebusyPromise, timeoutPromise]);
 
     const calendars = res.data.calendars || {};
     const conflicts = [];

@@ -228,7 +228,6 @@ export async function PATCH(req, { params }) {
         }
         await booking.save();
       }
-    }
     } else if ((status === "cancelled" || status === "declined") && booking.googleEventId) {
       // 已經同步過的行程被取消/拒絕:把 Google Calendar 上的事件一併刪掉
       await deleteGoogleCalendarEvent(session.user.id, booking.googleEventId);
