@@ -3,7 +3,15 @@ import { auth } from "@/libs/auth";
 import connectMongo from "@/libs/mongoose";
 import EventType from "@/models/EventType";
 
-// 給編輯頁預先帶入現有資料用
+const LOCATION_TYPES = ["google_meet", "in_person", "phone", "custom"];
+
+function normalizeLocationType(value) {
+  if (!value) return "custom";
+  if (value === "video") return "google_meet";
+  if (LOCATION_TYPES.includes(value)) return value;
+  return "custom";
+}
+
 export async function GET(req, { params }) {
   const session = await auth();
   if (!session?.user?.id) {
@@ -35,12 +43,20 @@ export async function PATCH(req, { params }) {
     description,
     duration,
     location,
+    locationType,
     color,
     isActive,
     requiresApproval,
     bufferMinutes,
     minimumNoticeMinutes,
+    bookingWindowDays,
+    maxBookingsPerDay,
     reminderMinutesBefore,
+    reminderOffsets,
+    policyNotes,
+    ctaButtonText,
+    successTitle,
+    successMessage,
   } = body;
 
   await connectMongo();
@@ -63,14 +79,28 @@ export async function PATCH(req, { params }) {
     eventType.duration = durationNum;
   }
   if (location !== undefined) eventType.location = location;
+  if (locationType !== undefined) eventType.locationType = normalizeLocationType(locationType);
   if (color !== undefined) eventType.color = color;
   if (isActive !== undefined) eventType.isActive = isActive;
   if (requiresApproval !== undefined) eventType.requiresApproval = requiresApproval;
   if (bufferMinutes !== undefined) eventType.bufferMinutes = Number(bufferMinutes) || 0;
   if (minimumNoticeMinutes !== undefined)
     eventType.minimumNoticeMinutes = Number(minimumNoticeMinutes) || 0;
+  if (bookingWindowDays !== undefined)
+    eventType.bookingWindowDays = Math.max(0, Number(bookingWindowDays) || 0);
+  if (maxBookingsPerDay !== undefined)
+    eventType.maxBookingsPerDay = Math.max(0, Number(maxBookingsPerDay) || 0);
   if (reminderMinutesBefore !== undefined)
     eventType.reminderMinutesBefore = Number(reminderMinutesBefore) || 0;
+  if (reminderOffsets !== undefined) {
+    eventType.reminderOffsets = Array.isArray(reminderOffsets)
+      ? reminderOffsets.map(Number).filter((n) => n > 0)
+      : [];
+  }
+  if (policyNotes !== undefined) eventType.policyNotes = policyNotes;
+  if (ctaButtonText !== undefined) eventType.ctaButtonText = ctaButtonText;
+  if (successTitle !== undefined) eventType.successTitle = successTitle;
+  if (successMessage !== undefined) eventType.successMessage = successMessage;
 
   await eventType.save();
 

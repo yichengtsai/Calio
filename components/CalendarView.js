@@ -903,6 +903,17 @@ export default function CalendarView() {
               </p>
             )}
 
+            {selectedItem.meetingUrl && (
+              <a
+                href={selectedItem.meetingUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-sm btn-primary w-full"
+              >
+                Join Google Meet
+              </a>
+            )}
+
             {selectedItem.source === "booking" ? (
               <div className="rounded-lg bg-base-200 px-4 py-3 space-y-1">
                 <p className="text-sm font-medium">{selectedItem.inviteeName}</p>

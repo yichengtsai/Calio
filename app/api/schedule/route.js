@@ -29,7 +29,7 @@ export async function GET() {
     Booking.find({
       organizer: session.user.id,
       status: { $in: ["confirmed", "pending"] },
-    }).populate("eventType", "title color"),
+    }).populate("eventType", "title color location locationType"),
     Event.find({ organizer: session.user.id, status: { $ne: "cancelled" } }),
     Block.find({ user: session.user.id }),
   ]);
@@ -75,7 +75,11 @@ export async function GET() {
       startTime: b.startTime,
       endTime: b.endTime,
       color: b.eventType?.color || "#6366f1",
-      location: b.eventType?.location || null,
+      location:
+        b.eventType?.locationType === "google_meet"
+          ? "Google Meet"
+          : b.eventType?.location || null,
+      meetingUrl: b.meetingUrl || null,
       inviteeName: b.inviteeName,
       inviteeEmail: b.inviteeEmail,
       inviteeNotes: b.inviteeNotes || null,

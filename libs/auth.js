@@ -50,7 +50,7 @@ function patchedAdapter(baseAdapter) {
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   secret: process.env.NEXTAUTH_SECRET,
-  debug: true,
+  debug: process.env.NODE_ENV === "development",
   providers: [
     ...(connectMongo
       ? [
@@ -59,8 +59,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             clientSecret: process.env.GOOGLE_SECRET,
             authorization: {
               params: {
+                // calendar.events: 寫入/更新/刪除事件、建立 Google Meet
+                // calendar.readonly: 列出日曆清單 + Free/Busy 多日曆查詢
                 scope:
-                  "openid email profile https://www.googleapis.com/auth/calendar.events",
+                  "openid email profile https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly",
                 access_type: "offline",
                 prompt: "consent",
               },

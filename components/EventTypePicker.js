@@ -4,7 +4,13 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import BookingWidget from "@/components/BookingWidget";
 
-function getLocationType(location) {
+function getLocationType(et) {
+  const structured = et?.locationType;
+  if (structured === "google_meet" || structured === "video") return "video";
+  if (structured === "phone") return "phone";
+  if (structured === "in_person") return "in-person";
+
+  const location = et?.location;
   if (!location) return null;
   const l = location.toLowerCase();
   if (/phone|call/.test(l)) return "phone";
@@ -124,7 +130,7 @@ export default function EventTypePicker({ username, eventTypes, organizerName, o
       ) : (
         <div className="space-y-3">
           {eventTypes.map((et) => {
-            const locationType = getLocationType(et.location);
+            const locationType = getLocationType(et);
             const meta = locationType ? LOCATION_META[locationType] : null;
 
             return (

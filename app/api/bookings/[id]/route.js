@@ -33,7 +33,7 @@ export async function PATCH(req, { params }) {
 
   const booking = await Booking.findOne({ _id: id, organizer: session.user.id }).populate(
     "eventType",
-    "title location"
+    "title location locationType"
   );
   if (!booking) {
     return NextResponse.json({ error: "Booking not found" }, { status: 404 });
@@ -205,20 +205,30 @@ export async function PATCH(req, { params }) {
   // ---- Google Calendar 同步 ----
   if (canUseGoogleCalendarSync(organizer)) {
     if (status === "confirmed" && !booking.googleEventId) {
-      // 從 pending 審核通過:這是第一次寫進 Google Calendar
-      const googleEventId = await pushEventToGoogleCalendar(session.user.id, {
-        title: `${booking.eventType?.title || "Event"} with ${booking.inviteeName}`,
-        description: booking.inviteeNotes || undefined,
-        location: booking.eventType?.location,
-        startTime: booking.startTime,
-        endTime: booking.endTime,
-        timezone,
-        participants: [{ email: booking.inviteeEmail, name: booking.inviteeName }],
-      });
-      if (googleEventId) {
-        booking.googleEventId = googleEventId;
+      const createMeet = booking.eventType?.locationType === "google_meet";
+      const pushed = await pushEventToGoogleCalendar(
+        session.user.id,
+        {
+          title: `${booking.eventType?.title || "Event"} with ${booking.inviteeName}`,
+          description: booking.inviteeNotes || undefined,
+          location: booking.eventType?.location,
+          startTime: booking.startTime,
+          endTime: booking.endTime,
+          timezone,
+          participants: [{ email: booking.inviteeEmail, name: booking.inviteeName }],
+        },
+        { createMeet }
+      );
+      if (pushed) {
+        if (typeof pushed === "string") {
+          booking.googleEventId = pushed;
+        } else {
+          booking.googleEventId = pushed.id;
+          if (pushed.meetingUrl) booking.meetingUrl = pushed.meetingUrl;
+        }
         await booking.save();
       }
+    }
     } else if ((status === "cancelled" || status === "declined") && booking.googleEventId) {
       // 已經同步過的行程被取消/拒絕:把 Google Calendar 上的事件一併刪掉
       await deleteGoogleCalendarEvent(session.user.id, booking.googleEventId);
@@ -233,7 +243,13 @@ export async function PATCH(req, { params }) {
       startTime: booking.startTime,
       endTime: booking.endTime,
       timezone: inviteeTimezone,
+      location:
+        booking.eventType?.locationType === "google_meet"
+          ? "Google Meet"
+          : booking.eventType?.location,
+      meetingUrl: booking.meetingUrl,
       inviteeName: booking.inviteeName,
+      cancelUrl: `${process.env.NEXT_PUBLIC_APP_URL}/booking/${booking.id}/cancel?token=${booking.cancelToken}`,
     });
   } else if (status === "declined") {
     emailPayload = buildDeclinedEmail({

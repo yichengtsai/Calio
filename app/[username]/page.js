@@ -39,6 +39,7 @@ export default async function PublicProfilePage({ params }) {
     description: et.description || "",
     duration: et.duration,
     location: et.location || "",
+    locationType: et.locationType || "custom",
     color: et.color || brandColor,
   }));
 

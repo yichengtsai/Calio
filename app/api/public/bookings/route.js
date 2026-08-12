@@ -193,17 +193,29 @@ export async function POST(req) {
       // 自動確認:立刻寫回主辦人的 Google Calendar(Pro 版),讓對方在自己的行事曆上馬上看到這筆
       // 行程,不用等他自己回來後台看。失敗不影響預約本身,只是那次沒同步成功。
       if (canUseGoogleCalendarSync(user)) {
-        const googleEventId = await pushEventToGoogleCalendar(user._id, {
-          title: `${eventType.title} with ${inviteeName}`,
-          description: inviteeNotes || undefined,
-          location: eventType.location,
-          startTime: start,
-          endTime: end,
-          timezone,
-          participants: [{ email: inviteeEmail, name: inviteeName }],
-        });
-        if (googleEventId) {
-          booking.googleEventId = googleEventId;
+        const createMeet = eventType.locationType === "google_meet";
+        const pushed = await pushEventToGoogleCalendar(
+          user._id,
+          {
+            title: `${eventType.title} with ${inviteeName}`,
+            description: inviteeNotes || undefined,
+            location: eventType.location,
+            startTime: start,
+            endTime: end,
+            timezone,
+            participants: [{ email: inviteeEmail, name: inviteeName }],
+          },
+          { createMeet }
+        );
+        if (pushed) {
+          if (typeof pushed === "string") {
+            booking.googleEventId = pushed;
+          } else {
+            booking.googleEventId = pushed.id;
+            if (pushed.meetingUrl) {
+              booking.meetingUrl = pushed.meetingUrl;
+            }
+          }
           await booking.save();
         }
       }
@@ -219,7 +231,10 @@ export async function POST(req) {
             startTime: start,
             endTime: end,
             timezone: inviteeDisplayTimezone,
-            location: eventType.location,
+            location: eventType.locationType === "google_meet"
+              ? "Google Meet"
+              : eventType.location,
+            meetingUrl: booking.meetingUrl,
             inviteeName,
             cancelUrl,
           }),
@@ -232,7 +247,10 @@ export async function POST(req) {
             startTime: start,
             endTime: end,
             timezone,
-            location: eventType.location,
+            location: eventType.locationType === "google_meet"
+              ? "Google Meet"
+              : eventType.location,
+            meetingUrl: booking.meetingUrl,
             inviteeName,
             inviteeEmail,
             inviteeNotes,

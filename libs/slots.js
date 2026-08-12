@@ -2,15 +2,6 @@ import { zonedTimeToUtc, dayOfWeekForDateStr } from "@/libs/timezone";
 
 /**
  * 算出某一天(dateStr, 例如 "2026-08-03",以 organizer 的時區為準)有哪些可預約時段。
- *
- * @param {Object} params
- * @param {Array}  params.timeSlots        Availability.timeSlots,例如 [{ dayOfWeek, startTime, endTime }]
- * @param {string} params.timezone         organizer 的 IANA 時區
- * @param {number} params.duration         這個活動類型的長度(分鐘)
- * @param {string} params.dateStr          要查的日期,格式 "YYYY-MM-DD"
- * @param {Array}  params.existingBookings 這個 organizer 當天已確認的預約,[{ startTime: Date, endTime: Date }]
- * @param {Date}   [params.now]            現在時間,預設 new Date(),測試時可覆寫
- * @returns {Array<{ start: Date, end: Date }>}
  */
 export function getSlotsForDate({
   timeSlots,
@@ -19,9 +10,32 @@ export function getSlotsForDate({
   dateStr,
   existingBookings = [],
   now = new Date(),
-  bufferMinutes = 0, // 每個已確認行程前後留的緩衝時間,避免緊接著開下一場
-  minimumNoticeMinutes = 0, // 最少要提前多久才能預約,例如至少提前 2 小時 = 120
+  bufferMinutes = 0,
+  minimumNoticeMinutes = 0,
+  bookingWindowDays = 0,
+  maxBookingsPerDay = 0,
+  confirmedCountOnDate = 0,
 }) {
+  if (bookingWindowDays > 0) {
+    const formatter = new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    const todayStr = formatter.format(now);
+    const todayUtc = new Date(`${todayStr}T00:00:00Z`);
+    const targetUtc = new Date(`${dateStr}T00:00:00Z`);
+    const diffDays = Math.round((targetUtc - todayUtc) / (24 * 60 * 60 * 1000));
+    if (diffDays < 0 || diffDays > bookingWindowDays) {
+      return [];
+    }
+  }
+
+  if (maxBookingsPerDay > 0 && confirmedCountOnDate >= maxBookingsPerDay) {
+    return [];
+  }
+
   const dayOfWeek = dayOfWeekForDateStr(dateStr);
   const rulesForDay = timeSlots.filter((s) => s.dayOfWeek === dayOfWeek);
 
@@ -55,7 +69,6 @@ export function getSlotsForDate({
     }
   }
 
-  // 同一天可能有多條規則產生的時段,依時間排序
   slots.sort((a, b) => a.start.getTime() - b.start.getTime());
   return slots;
 }

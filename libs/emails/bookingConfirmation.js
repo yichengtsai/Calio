@@ -33,10 +33,15 @@ export function buildInviteeConfirmationEmail({
   endTime,
   timezone,
   location,
+  meetingUrl,
   inviteeName,
   cancelUrl,
 }) {
   const when = formatWhen(startTime, endTime, timezone);
+  const joinBlock = meetingUrl
+    ? `<p style="margin: 16px 0 8px;"><a href="${escapeHtml(meetingUrl)}" style="display: inline-block; background: #1a73e8; color: #ffffff; text-decoration: none; padding: 10px 20px; border-radius: 6px; font-size: 14px; font-weight: 600;">Join Google Meet</a></p>
+       <p style="font-size: 12px; color: #6b7280; word-break: break-all;">${escapeHtml(meetingUrl)}</p>`
+    : "";
 
   const html = wrapEmail(`
     <p style="font-size: 14px; color: #6b7280; margin: 0 0 4px;">Confirmed with ${escapeHtml(organizerName)}</p>
@@ -49,6 +54,8 @@ export function buildInviteeConfirmationEmail({
       </tr>
       ${location ? `<tr><td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Where</td><td style="padding: 8px 0; font-size: 14px;">${escapeHtml(location)}</td></tr>` : ""}
     </table>
+
+    ${joinBlock}
 
     <p style="font-size: 14px;">Hi ${escapeHtml(inviteeName)}, you're all set — this has been added as confirmed.</p>
 
@@ -227,14 +234,19 @@ export function buildOrganizerAutoConfirmedEmail({
   endTime,
   timezone,
   location,
+  meetingUrl,
   inviteeName,
   inviteeEmail,
   inviteeNotes,
 }) {
   const when = formatWhen(startTime, endTime, timezone);
+  const joinBlock = meetingUrl
+    ? `<p style="margin: 16px 0 8px;"><a href="${escapeHtml(meetingUrl)}" style="display: inline-block; background: #1a73e8; color: #ffffff; text-decoration: none; padding: 10px 20px; border-radius: 6px; font-size: 14px; font-weight: 600;">Join Google Meet</a></p>
+       <p style="font-size: 12px; color: #6b7280; word-break: break-all;">${escapeHtml(meetingUrl)}</p>`
+    : "";
 
   const html = wrapEmail(`
-    <p style="font-size: 14px; color: #6b7280; margin: 0 0 4px;">New booking (auto-confirmed)</p>
+    <p style="font-size: 14px; color: #6b7280; margin: 0 0 4px;">New booking confirmed</p>
     <h1 style="font-size: 22px; margin: 0 0 20px; line-height: 1.4;">${escapeHtml(eventTitle)}</h1>
 
     <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
@@ -243,18 +255,18 @@ export function buildOrganizerAutoConfirmedEmail({
         <td style="padding: 8px 0; font-size: 14px; font-weight: 600;">${when}</td>
       </tr>
       <tr>
-        <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Booked by</td>
+        <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Guest</td>
         <td style="padding: 8px 0; font-size: 14px;">${escapeHtml(inviteeName)} (${escapeHtml(inviteeEmail)})</td>
       </tr>
       ${location ? `<tr><td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Where</td><td style="padding: 8px 0; font-size: 14px;">${escapeHtml(location)}</td></tr>` : ""}
     </table>
 
-    ${inviteeNotes ? `<p style="font-size: 14px; line-height: 1.6; color: #374151;"><strong>Notes:</strong> ${escapeHtml(inviteeNotes)}</p>` : ""}
+    ${joinBlock}
 
-    <p style="font-size: 14px; margin-top: 20px; color: #6b7280;">This event type is set to auto-confirm, so it's already on your calendar — no action needed.</p>
+    ${inviteeNotes ? `<p style="font-size: 14px; line-height: 1.6; color: #374151;"><strong>Notes:</strong> ${escapeHtml(inviteeNotes)}</p>` : ""}
   `);
 
-  return { subject: `New booking: ${eventTitle} with ${inviteeName}`, html };
+  return { subject: `Booked: ${inviteeName} — ${eventTitle} (${when})`, html };
 }
 
 /**
@@ -267,6 +279,7 @@ export function buildBookingReminderEmail({
   endTime,
   timezone,
   location,
+  meetingUrl,
   inviteeName,
   minutesBefore,
 }) {
@@ -291,6 +304,7 @@ export function buildBookingReminderEmail({
       </tr>
       ${location ? `<tr><td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Where</td><td style="padding: 8px 0; font-size: 14px;">${escapeHtml(location)}</td></tr>` : ""}
     </table>
+    ${meetingUrl ? `<p style="margin: 16px 0 8px;"><a href="${escapeHtml(meetingUrl)}" style="display: inline-block; background: #1a73e8; color: #ffffff; text-decoration: none; padding: 10px 20px; border-radius: 6px; font-size: 14px; font-weight: 600;">Join Google Meet</a></p>` : ""}
 
     <p style="font-size: 14px;">Hi ${escapeHtml(inviteeName)}, just a heads up — this is coming up soon.</p>
   `);

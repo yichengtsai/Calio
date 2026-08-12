@@ -26,6 +26,11 @@ export default function AccountSettingsForm() {
   const [copied, setCopied] = useState(false);
   const [origin, setOrigin] = useState("");
   const [plan, setPlan] = useState(null);
+  const [calendars, setCalendars] = useState([]);
+  const [selectedCalendarIds, setSelectedCalendarIds] = useState([]);
+  const [calendarsLoading, setCalendarsLoading] = useState(false);
+  const [calendarsSaving, setCalendarsSaving] = useState(false);
+  const [calendarsListError, setCalendarsListError] = useState(null);
 
   useEffect(() => {
     setOrigin(window.location.origin);
@@ -49,6 +54,23 @@ export default function AccountSettingsForm() {
         setPolicyNotes(data.policyNotes || "");
         setTagsInput((data.tags || []).join(", "));
         setPlan(data.plan || null);
+
+        if (data.plan?.googleCalendarSyncActive) {
+          setCalendarsLoading(true);
+          try {
+            const calRes = await fetch("/api/account/calendars");
+            const calData = await calRes.json();
+            if (calRes.ok) {
+              setCalendars(calData.calendars || []);
+              setSelectedCalendarIds(calData.selectedIds || []);
+              setCalendarsListError(calData.listError || null);
+            }
+          } catch (_) {
+            /* ignore */
+          } finally {
+            setCalendarsLoading(false);
+          }
+        }
       } catch (e) {
         setResult({ type: "error", message: "Failed to load account info" });
       } finally {
@@ -57,6 +79,34 @@ export default function AccountSettingsForm() {
     }
     load();
   }, []);
+
+  function toggleCalendar(id) {
+    setSelectedCalendarIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  }
+
+  async function saveCalendars() {
+    setCalendarsSaving(true);
+    try {
+      const res = await fetch("/api/account/calendars", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ calendarIds: selectedCalendarIds }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setResult({ type: "error", message: data.error || "Failed to save calendars" });
+        return;
+      }
+      setSelectedCalendarIds(data.selectedIds || []);
+      setResult({ type: "success", message: "Calendar selection saved" });
+    } catch (e) {
+      setResult({ type: "error", message: "Failed to save calendars" });
+    } finally {
+      setCalendarsSaving(false);
+    }
+  }
 
   async function handleSave(e) {
     e.preventDefault();
@@ -236,6 +286,53 @@ export default function AccountSettingsForm() {
             >
               Connect Google Calendar
             </button>
+          )}
+          {plan.googleCalendarSyncActive && (
+            <div className="pt-2 space-y-2 border-t border-base-300 mt-2">
+              <p className="text-xs font-medium text-base-content/70">
+                Calendars checked for conflicts
+              </p>
+              {calendarsLoading ? (
+                <p className="text-xs text-base-content/40">Loading calendars…</p>
+              ) : calendars.length === 0 ? (
+                <p className="text-xs text-base-content/40">
+                  {calendarsListError === "missing_scope"
+                    ? "Google did not grant calendar read access. Sign out completely, sign in again, and accept all calendar permissions."
+                    : "No calendars found. Try reconnecting Google (sign out & in)."}
+                </p>
+              ) : (
+                <ul className="space-y-1.5 max-h-40 overflow-y-auto">
+                  {calendars.map((cal) => (
+                    <li key={cal.id}>
+                      <label className="flex items-center gap-2 text-sm cursor-pointer">
+                        <input
+                          type="checkbox"
+                          className="checkbox checkbox-xs"
+                          checked={selectedCalendarIds.includes(cal.id)}
+                          onChange={() => toggleCalendar(cal.id)}
+                        />
+                        <span className="truncate">
+                          {cal.summary}
+                          {cal.primary ? (
+                            <span className="text-xs text-base-content/40 ml-1">(primary)</span>
+                          ) : null}
+                        </span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {calendars.length > 0 && (
+                <button
+                  type="button"
+                  onClick={saveCalendars}
+                  disabled={calendarsSaving || selectedCalendarIds.length === 0}
+                  className="btn btn-xs btn-outline"
+                >
+                  {calendarsSaving ? "Saving…" : "Save calendar selection"}
+                </button>
+              )}
+            </div>
           )}
         </div>
       )}

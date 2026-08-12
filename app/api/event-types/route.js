@@ -5,6 +5,8 @@ import EventType from "@/models/EventType";
 import User from "@/models/User";
 import { canCreateEventType, FREE_EVENT_TYPE_LIMIT } from "@/libs/plans";
 
+const LOCATION_TYPES = ["google_meet", "in_person", "phone", "custom"];
+
 function slugify(input) {
   return input
     .toLowerCase()
@@ -13,7 +15,6 @@ function slugify(input) {
     .replace(/^-+|-+$/g, "");
 }
 
-// 產生一段隨機亂碼,讓網址不能單純用活動名稱猜出來,降低被亂槍打鳥掃描/濫用的風險
 function randomSuffix(length = 6) {
   const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
   let out = "";
@@ -21,6 +22,13 @@ function randomSuffix(length = 6) {
     out += chars[Math.floor(Math.random() * chars.length)];
   }
   return out;
+}
+
+function normalizeLocationType(value) {
+  if (!value) return "custom";
+  if (value === "video") return "google_meet";
+  if (LOCATION_TYPES.includes(value)) return value;
+  return "custom";
 }
 
 export async function GET() {
@@ -55,8 +63,14 @@ export async function POST(req) {
     requiresApproval,
     bufferMinutes,
     minimumNoticeMinutes,
+    bookingWindowDays,
+    maxBookingsPerDay,
     reminderMinutesBefore,
+    reminderOffsets,
     policyNotes,
+    ctaButtonText,
+    successTitle,
+    successMessage,
   } = body;
 
   if (!title || !duration) {
@@ -101,7 +115,6 @@ export async function POST(req) {
   const baseSlug = slugify(title) || "event";
   let slug = `${baseSlug}-${randomSuffix()}`;
 
-  // 機率極低,但還是保險檢查一次唯一性,萬一真的撞到就重抽
   while (await EventType.exists({ user: session.user.id, slug })) {
     slug = `${baseSlug}-${randomSuffix()}`;
   }
@@ -113,14 +126,23 @@ export async function POST(req) {
     description: description || undefined,
     duration: durationNum,
     location: location || undefined,
-    locationType: locationType || "video",
+    locationType: normalizeLocationType(locationType),
     color: color || undefined,
     requiresApproval: requiresApproval !== undefined ? requiresApproval : true,
     bufferMinutes: Number(bufferMinutes) || 0,
     minimumNoticeMinutes: Number(minimumNoticeMinutes) || 0,
+    bookingWindowDays:
+      bookingWindowDays !== undefined ? Math.max(0, Number(bookingWindowDays) || 0) : 60,
+    maxBookingsPerDay: Number(maxBookingsPerDay) || 0,
     reminderMinutesBefore:
       reminderMinutesBefore !== undefined ? Number(reminderMinutesBefore) || 0 : 30,
+    reminderOffsets: Array.isArray(reminderOffsets)
+      ? reminderOffsets.map(Number).filter((n) => n > 0)
+      : undefined,
     policyNotes: policyNotes || undefined,
+    ctaButtonText: ctaButtonText || undefined,
+    successTitle: successTitle || undefined,
+    successMessage: successMessage || undefined,
   });
 
   return NextResponse.json({ eventType }, { status: 201 });

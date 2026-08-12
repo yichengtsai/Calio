@@ -13,7 +13,7 @@ import { canUseGoogleCalendarSync } from "@/libs/plans";
 
 export async function GET(req) {
   const ip = getClientIp(req);
-  const limit = rateLimit(`availability:ip:${ip}`, 60, 5 * 60 * 1000); // 5分鐘60次,一般點選日期不太可能超過
+  const limit = rateLimit(`availability:ip:${ip}`, 60, 5 * 60 * 1000);
   if (!limit.allowed) {
     return NextResponse.json(
       { error: "Too many requests. Please slow down." },
@@ -24,13 +24,17 @@ export async function GET(req) {
   const { searchParams } = new URL(req.url);
   const username = searchParams.get("username");
   const slug = searchParams.get("slug");
-  const date = searchParams.get("date"); // "YYYY-MM-DD"
+  const date = searchParams.get("date");
 
   if (!username || !slug || !date) {
     return NextResponse.json(
       { error: "Missing username, slug, or date" },
       { status: 400 }
     );
+  }
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return NextResponse.json({ error: "Invalid date format" }, { status: 400 });
   }
 
   await connectMongo();
@@ -52,7 +56,6 @@ export async function GET(req) {
   const availability = await Availability.findOne({ user: user._id });
   const timeSlots = availability?.timeSlots || [];
 
-  // 寬鬆抓「查詢日期」前後各一天範圍的既有預約,避免時區邊界導致漏抓
   const dayDate = new Date(`${date}T00:00:00Z`);
   const rangeStart = new Date(dayDate.getTime() - 24 * 60 * 60 * 1000);
   const rangeEnd = new Date(dayDate.getTime() + 2 * 24 * 60 * 60 * 1000);
@@ -64,14 +67,12 @@ export async function GET(req) {
       startTime: { $lt: rangeEnd },
       endTime: { $gt: rangeStart },
     }).select("startTime endTime"),
-    // 你自己建的行程(不管有沒有邀請別人)也要擋掉公開頁的空檔,不然別人可能約到你已經有事的時段
     Event.find({
       organizer: user._id,
       status: { $ne: "cancelled" },
       startTime: { $lt: rangeEnd },
       endTime: { $gt: rangeStart },
     }).select("startTime endTime"),
-    // 你自己填的忙碌時段,一樣要擋掉
     Block.find({
       user: user._id,
       startTime: { $lt: rangeEnd },
@@ -79,18 +80,23 @@ export async function GET(req) {
     }).select("startTime endTime"),
   ]);
 
-  // Pro 版:即時查一次 Google Calendar 這段範圍內的忙碌時段,一併擋掉。
-  // 這樣如果主辦人在 Google Calendar 上直接加了一個跟 Calio 無關的行程(例如手動加的內部會議),
-  // 公開頁也會馬上反映出「這時段不能約」,不用等他自己回來手動填 Block。
   let googleBusy = [];
   if (canUseGoogleCalendarSync(user)) {
-    const { checked, conflicts } = await checkCalendarConflict(user._id, rangeStart, rangeEnd);
+    const { checked, conflicts } = await checkCalendarConflict(
+      user._id,
+      rangeStart,
+      rangeEnd
+    );
     if (checked) {
       googleBusy = conflicts
         .filter((b) => b.start && b.end)
         .map((b) => ({ startTime: new Date(b.start), endTime: new Date(b.end) }));
     }
   }
+
+  const confirmedCountOnDate = existingBookings.filter((b) => {
+    return b.startTime.toISOString().slice(0, 10) === date;
+  }).length;
 
   const slots = getSlotsForDate({
     timeSlots,
@@ -100,6 +106,9 @@ export async function GET(req) {
     existingBookings: [...existingBookings, ...busyEvents, ...busyBlocks, ...googleBusy],
     bufferMinutes: eventType.bufferMinutes || 0,
     minimumNoticeMinutes: eventType.minimumNoticeMinutes || 0,
+    bookingWindowDays: eventType.bookingWindowDays ?? 60,
+    maxBookingsPerDay: eventType.maxBookingsPerDay || 0,
+    confirmedCountOnDate,
   });
 
   return NextResponse.json({
