@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 
@@ -25,16 +25,30 @@ export default function DashboardNav() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [pendingCount, setPendingCount] = useState(0);
+  const fetchedOnce = useRef(false);
+
+  function loadPendingCount() {
+    fetch("/api/bookings/pending-count")
+      .then((res) => res.json())
+      .then((data) => setPendingCount(data.count || 0))
+      .catch(() => {});
+  }
 
   useEffect(() => {
-    fetch("/api/bookings")
-      .then((res) => res.json())
-      .then((data) => {
-        const count = (data.bookings || []).filter((b) => b.status === "pending").length;
-        setPendingCount(count);
-      })
-      .catch(() => {});
-  }, [pathname]);
+    // 只在第一次掛載時抓，不要每次切 pathname 都打完整 bookings
+    if (fetchedOnce.current) return;
+    fetchedOnce.current = true;
+    loadPendingCount();
+  }, []);
+
+  // 從其他分頁回來時刷新 badge（visibility）
+  useEffect(() => {
+    function onVisible() {
+      if (document.visibilityState === "visible") loadPendingCount();
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
 
   return (
     <nav className="flex-1 px-3 py-4 space-y-5">
@@ -53,6 +67,7 @@ export default function DashboardNav() {
                 <Link
                   key={item.href}
                   href={item.href}
+                  prefetch={true}
                   className={`relative flex items-center justify-between pl-3 pr-2 py-2 rounded-lg text-sm font-medium transition-colors ${
                     isActive
                       ? "bg-primary/10 text-primary font-semibold"

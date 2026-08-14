@@ -43,20 +43,38 @@ async function sendBookingReminders() {
       const organizer = await User.findById(booking.organizer);
       const timezone = organizer?.timezone || "Asia/Taipei";
 
+      const reminderPayload = buildBookingReminderEmail({
+        eventTitle: booking.eventType?.title || "Event",
+        organizerName: organizer?.name || organizer?.email,
+        startTime: booking.startTime,
+        endTime: booking.endTime,
+        timezone,
+        location: booking.eventType?.location,
+        meetingUrl: booking.meetingUrl,
+        inviteeName: booking.inviteeName,
+        minutesBefore,
+      });
+
+      // 預約人
       await resend.emails.send({
         from: EMAIL_FROM,
         to: booking.inviteeEmail,
-        ...buildBookingReminderEmail({
-          eventTitle: booking.eventType?.title || "Event",
-          organizerName: organizer?.name || organizer?.email,
-          startTime: booking.startTime,
-          endTime: booking.endTime,
-          timezone,
-          location: booking.eventType?.location,
-          inviteeName: booking.inviteeName,
-          minutesBefore,
-        }),
+        ...reminderPayload,
       });
+
+      // 主辦人也收一封
+      if (organizer?.email) {
+        await resend.emails
+          .send({
+            from: EMAIL_FROM,
+            to: organizer.email,
+            ...reminderPayload,
+            subject: `[Host] ${reminderPayload.subject}`,
+          })
+          .catch((e) =>
+            console.error(`Failed to send host reminder for ${booking._id}:`, e.message)
+          );
+      }
 
       booking.reminderSentAt = now;
       await booking.save();

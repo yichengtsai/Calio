@@ -2,6 +2,7 @@ import { NextResponse, after } from "next/server";
 import { auth } from "@/libs/auth";
 import connectMongo from "@/libs/mongoose";
 import Event from "@/models/Event";
+import EventType from "@/models/EventType";
 import User from "@/models/User";
 import { resend, EMAIL_FROM } from "@/libs/resend";
 import {
@@ -14,6 +15,7 @@ import {
   deleteGoogleCalendarEvent,
   updateGoogleCalendarEvent,
 } from "@/libs/googleCalendar";
+import { findInternalConflicts, conflictErrorMessage } from "@/libs/conflicts";
 
 function normalizeEmail(email) {
   return String(email || "").trim().toLowerCase();
@@ -182,6 +184,33 @@ export async function PATCH(req, { params }) {
       newEnd.getTime() !== event.endTime.getTime()
     ) {
       changedFields.push("Time");
+    }
+
+        const eventTypes = await EventType.find({ user: session.user.id, isActive: true })
+      .select("bufferMinutes")
+      .lean();
+    const maxBuffer = eventTypes.reduce(
+      (m, et) => Math.max(m, Number(et.bufferMinutes) || 0),
+      0
+    );
+
+    const internalConflicts = await findInternalConflicts({
+      organizerId: session.user.id,
+      start: newStart,
+      end: newEnd,
+      excludeEventId: event._id,
+      bufferMinutes: maxBuffer,
+    });
+    if (internalConflicts.length > 0) {
+      return NextResponse.json(
+        {
+          error: "conflict",
+          message: conflictErrorMessage(internalConflicts),
+          conflicts: internalConflicts,
+          source: "internal",
+        },
+        { status: 409 }
+      );
     }
 
     event.startTime = newStart;

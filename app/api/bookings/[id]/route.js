@@ -16,6 +16,7 @@ import {
   deleteGoogleCalendarEvent,
 } from "@/libs/googleCalendar";
 import { canUseGoogleCalendarSync } from "@/libs/plans";
+import { findInternalConflicts, conflictErrorMessage } from "@/libs/conflicts";
 
 const ALLOWED_STATUSES = ["confirmed", "declined", "cancelled"];
 
@@ -33,7 +34,7 @@ export async function PATCH(req, { params }) {
 
   const booking = await Booking.findOne({ _id: id, organizer: session.user.id }).populate(
     "eventType",
-    "title location locationType"
+    "title location locationType minimumNoticeMinutes bufferMinutes duration"
   );
   if (!booking) {
     return NextResponse.json({ error: "Booking not found" }, { status: 404 });
@@ -81,17 +82,16 @@ export async function PATCH(req, { params }) {
       return NextResponse.json({ booking, rescheduled: false });
     }
 
-    // 跟你自己其他已確認的預約撞期就擋掉(排除自己這一筆)
-    const conflict = await Booking.findOne({
-      _id: { $ne: booking._id },
-      organizer: session.user.id,
-      status: "confirmed",
-      startTime: { $lt: newEnd },
-      endTime: { $gt: newStart },
+    const internalConflicts = await findInternalConflicts({
+      organizerId: session.user.id,
+      start: newStart,
+      end: newEnd,
+      excludeBookingId: booking._id,
+      bufferMinutes: booking.eventType?.bufferMinutes || 0,
     });
-    if (conflict) {
+    if (internalConflicts.length > 0) {
       return NextResponse.json(
-        { error: "This overlaps with another booking you already have confirmed" },
+        { error: conflictErrorMessage(internalConflicts) },
         { status: 409 }
       );
     }
@@ -158,6 +158,9 @@ export async function PATCH(req, { params }) {
           endTime: newEnd,
           timezone: inviteeTimezone,
           inviteeName: booking.inviteeName,
+          cancelUrl: `${process.env.NEXT_PUBLIC_APP_URL}/booking/${booking.id}/cancel?token=${booking.cancelToken}`,
+          rescheduleUrl: `${process.env.NEXT_PUBLIC_APP_URL}/booking/${booking.id}/reschedule?token=${booking.cancelToken}`,
+          minimumNoticeMinutes: booking.eventType?.minimumNoticeMinutes || 0,
         }),
       })
       .catch((e) => console.error("Failed to send reschedule email:", e.message));
@@ -177,18 +180,18 @@ export async function PATCH(req, { params }) {
     return NextResponse.json({ booking }); // 已經是這個狀態了,直接回傳現況
   }
 
-  // 同意前再檢查一次有沒有跟「已確認」的行程衝突(避免同一時段有兩個待審核請求,你先同意了另一個)
+  // 同意前再檢查：不能跟其他預約或會議撞期
   if (status === "confirmed") {
-    const conflict = await Booking.findOne({
-      _id: { $ne: booking._id },
-      organizer: session.user.id,
-      status: "confirmed",
-      startTime: { $lt: booking.endTime },
-      endTime: { $gt: booking.startTime },
+    const internalConflicts = await findInternalConflicts({
+      organizerId: session.user.id,
+      start: booking.startTime,
+      end: booking.endTime,
+      excludeBookingId: booking._id,
+      bufferMinutes: booking.eventType?.bufferMinutes || 0,
     });
-    if (conflict) {
+    if (internalConflicts.length > 0) {
       return NextResponse.json(
-        { error: "This overlaps with a booking you've already confirmed" },
+        { error: conflictErrorMessage(internalConflicts) },
         { status: 409 }
       );
     }
@@ -199,6 +202,9 @@ export async function PATCH(req, { params }) {
   if (status === "cancelled") {
     booking.cancelledAt = new Date();
     booking.cancelReason = cancelReason || undefined;
+  }
+  if (status === "declined" && cancelReason) {
+    booking.cancelReason = cancelReason;
   }
   await booking.save();
 
@@ -250,6 +256,7 @@ export async function PATCH(req, { params }) {
       inviteeName: booking.inviteeName,
       cancelUrl: `${process.env.NEXT_PUBLIC_APP_URL}/booking/${booking.id}/cancel?token=${booking.cancelToken}`,
       rescheduleUrl: `${process.env.NEXT_PUBLIC_APP_URL}/booking/${booking.id}/reschedule?token=${booking.cancelToken}`,
+      minimumNoticeMinutes: booking.eventType?.minimumNoticeMinutes || 0,
     });
   } else if (status === "declined") {
     emailPayload = buildDeclinedEmail({
@@ -259,6 +266,7 @@ export async function PATCH(req, { params }) {
       endTime: booking.endTime,
       timezone: inviteeTimezone,
       inviteeName: booking.inviteeName,
+      reason: booking.cancelReason || cancelReason || undefined,
     });
   } else if (status === "cancelled") {
     emailPayload = buildCancellationEmail({

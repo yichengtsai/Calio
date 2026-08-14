@@ -14,6 +14,7 @@ import {
 } from "@/libs/emails/bookingConfirmation";
 import { checkCalendarConflict, pushEventToGoogleCalendar } from "@/libs/googleCalendar";
 import { canUseGoogleCalendarSync } from "@/libs/plans";
+import { findInternalConflicts, conflictErrorMessage } from "@/libs/conflicts";
 
 export async function POST(req) {
   try {
@@ -96,27 +97,32 @@ export async function POST(req) {
       return NextResponse.json({ error: "This time has already passed" }, { status: 400 });
     }
 
+    const noticeMins = Number(eventType.minimumNoticeMinutes) || 0;
+    if (noticeMins > 0) {
+      const earliest = new Date(Date.now() + noticeMins * 60 * 1000);
+      if (start.getTime() < earliest.getTime()) {
+        return NextResponse.json(
+          {
+            error: `This event requires at least ${noticeMins} minutes advance notice`,
+          },
+          { status: 400 }
+        );
+      }
+    }
+
     const end = new Date(start.getTime() + eventType.duration * 60000);
 
-    // 防止兩個人幾乎同時搶同一個時段(race condition),也要擋掉主辦人自己建立的行程
-    const [bookingConflict, eventConflict] = await Promise.all([
-      Booking.findOne({
-        organizer: user._id,
-        status: "confirmed",
-        startTime: { $lt: end },
-        endTime: { $gt: start },
-      }),
-      Event.findOne({
-        organizer: user._id,
-        status: { $ne: "cancelled" },
-        startTime: { $lt: end },
-        endTime: { $gt: start },
-      }),
-    ]);
-    if (bookingConflict || eventConflict) {
+    // 與已確認/待審核預約、以及會議撞期都擋
+    const internalConflicts = await findInternalConflicts({
+      organizerId: user._id,
+      start,
+      end,
+      bufferMinutes: eventType.bufferMinutes || 0,
+    });
+    if (internalConflicts.length > 0) {
       return NextResponse.json(
         {
-          error: "This time slot was just booked by someone else. Please pick another.",
+          error: conflictErrorMessage(internalConflicts),
         },
         { status: 409 }
       );
@@ -126,7 +132,12 @@ export async function POST(req) {
     // 擋掉「這個人在 Google Calendar 上其實已經有別的事,只是沒同步進 Calio」這種情況。
     // checked=false(沒連結 Google Calendar,或查詢失敗)不擋流程。
     if (canUseGoogleCalendarSync(user)) {
-      const { checked, conflicts } = await checkCalendarConflict(user._id, start, end);
+      const bufferMs = Math.max(0, Number(eventType.bufferMinutes) || 0) * 60 * 1000;
+      const { checked, conflicts } = await checkCalendarConflict(
+        user._id,
+        new Date(start.getTime() - bufferMs),
+        new Date(end.getTime() + bufferMs)
+      );
       if (checked && conflicts.length > 0) {
         return NextResponse.json(
           {
@@ -173,6 +184,7 @@ export async function POST(req) {
             inviteeName,
             cancelUrl,
             rescheduleUrl,
+            minimumNoticeMinutes: eventType.minimumNoticeMinutes || 0,
           }),
         }),
         resend.emails.send({
@@ -240,6 +252,7 @@ export async function POST(req) {
             inviteeName,
             cancelUrl,
             rescheduleUrl,
+            minimumNoticeMinutes: eventType.minimumNoticeMinutes || 0,
           }),
         }),
         resend.emails.send({

@@ -8,8 +8,7 @@ const eventTypeSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
-    title: { type: String, required: true, trim: true }, // e.g. "30 Minute Meeting"
-    // 這個活動類型在預約頁網址上的代稱,例如 yourapp.com/johnlin/30min
+    title: { type: String, required: true, trim: true },
     slug: {
       type: String,
       required: true,
@@ -18,30 +17,37 @@ const eventTypeSchema = new mongoose.Schema(
       match: [/^[a-z0-9-]+$/, "Slug can only contain lowercase letters, numbers, and hyphens"],
     },
     description: { type: String, trim: true, maxlength: 500 },
-    duration: { type: Number, required: true, min: 5 }, // 分鐘
-    location: { type: String, trim: true }, // e.g. "Google Meet", "Phone call", 自訂文字都可以
+    duration: { type: Number, required: true, min: 5 },
+    location: { type: String, trim: true },
     locationType: {
       type: String,
       enum: ["google_meet", "in_person", "phone", "custom"],
       default: "custom",
     },
-    color: { type: String, default: "#6366f1" }, // 預約頁上這個活動類型的識別色
-    isActive: { type: Boolean, default: true }, // 關閉後預約頁上不會顯示,但歷史預約紀錄還在
-    requiresApproval: { type: Boolean, default: true }, // true=有人預約先變pending要你Approve;false=送出就直接確認
-    bufferMinutes: { type: Number, default: 0, min: 0 }, // 每個已確認行程前後留的緩衝時間(分鐘)
-    minimumNoticeMinutes: { type: Number, default: 0, min: 0 }, // 最少要提前多久才能預約(分鐘)
-    // 開始前幾分鐘寄一次提醒信給雙方,0 = 不寄提醒信
+    color: { type: String, default: "#6366f1" },
+    isActive: { type: Boolean, default: true },
+    requiresApproval: { type: Boolean, default: true },
+    bufferMinutes: { type: Number, default: 0, min: 0 },
+    slotIntervalMinutes: { type: Number, default: 0, min: 0 },
+    minimumNoticeMinutes: { type: Number, default: 0, min: 0 },
     reminderMinutesBefore: { type: Number, default: 30, min: 0 },
-    bookingWindowDays: { type: Number, default: 60, min: 1 }, // 最遠可預約天數
-    maxBookingsPerDay: { type: Number, default: 0, min: 0 }, // 0 = 不限制每日預約數
+    bookingWindowDays: { type: Number, default: 60, min: 1 },
+    maxBookingsPerDay: { type: Number, default: 0, min: 0 },
   },
   { timestamps: true, toJSON: { virtuals: true } }
 );
 
-// 同一個使用者底下 slug 不能重複,但不同使用者可以有一樣的 slug(各自的網址不同)
 eventTypeSchema.index({ user: 1, slug: 1 }, { unique: true });
 
 eventTypeSchema.plugin(toJSON);
 
-export default mongoose.models.EventType ||
-  mongoose.model("EventType", eventTypeSchema);
+// 不刪除已註冊 model（刪除會讓每個請求重編譯 schema，極慢）
+// 若已註冊且缺欄位，用 schema.add 補上
+if (mongoose.models.EventType) {
+  const s = mongoose.models.EventType.schema;
+  if (!s.path("slotIntervalMinutes")) {
+    s.add({ slotIntervalMinutes: { type: Number, default: 0, min: 0 } });
+  }
+}
+
+export default mongoose.models.EventType || mongoose.model("EventType", eventTypeSchema);

@@ -54,6 +54,8 @@ const bookingSchema = new mongoose.Schema(
 
 // 常見查詢:查某個 organizer 在某段時間內已確認的預約(算空檔、防止雙重預約都要用)
 bookingSchema.index({ organizer: 1, startTime: 1, status: 1 });
+// pending count / 狀態篩選
+bookingSchema.index({ organizer: 1, status: 1 });
 
 bookingSchema.plugin(toJSON);
 

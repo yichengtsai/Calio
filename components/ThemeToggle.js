@@ -18,22 +18,42 @@ function MoonIcon() {
   );
 }
 
+function applyTheme(next) {
+  const root = document.documentElement;
+  root.setAttribute("data-theme", next);
+  // 避免系統 prefers-color-scheme 干擾 daisyUI
+  root.style.colorScheme = next === "deepwork" ? "dark" : "light";
+  try {
+    localStorage.setItem("theme", next);
+  } catch (e) {}
+  // 清掉頁面內任何寫死的 data-theme，避免局部覆蓋全域
+  document.querySelectorAll("[data-theme]").forEach((el) => {
+    if (el !== root) el.removeAttribute("data-theme");
+  });
+}
+
 export default function ThemeToggle() {
-  const [theme, setTheme] = useState(null); // 先給 null,mount 之後才讀真正的值,避免 SSR/瀏覽器對不上
+  const [theme, setTheme] = useState(null);
 
   useEffect(() => {
-    const current = document.documentElement.getAttribute("data-theme") || "deepwork";
+    let current = "light";
+    try {
+      current =
+        localStorage.getItem("theme") ||
+        document.documentElement.getAttribute("data-theme") ||
+        "light";
+    } catch (e) {}
+    if (current !== "light" && current !== "deepwork") current = "light";
+    applyTheme(current);
     setTheme(current);
   }, []);
 
   function toggle() {
-    const next = theme === "deepwork" ? "light" : "deepwork";
+    const next = theme === "light" ? "deepwork" : "light";
+    applyTheme(next);
     setTheme(next);
-    localStorage.setItem("theme", next);
-    document.documentElement.setAttribute("data-theme", next);
   }
 
-  // 還沒 mount 前不渲染任何東西,避免 hydration 對不上(跟之前處理過的問題同一類)
   if (!theme) return null;
 
   return (
@@ -41,10 +61,10 @@ export default function ThemeToggle() {
       type="button"
       onClick={toggle}
       aria-label="Toggle light/dark theme"
-      title={theme === "deepwork" ? "Switch to light mode" : "Switch to dark mode"}
-      className="fixed bottom-4 right-4 z-40 w-10 h-10 rounded-full border border-base-300 bg-base-100 shadow-lg flex items-center justify-center text-base-content/70 hover:text-base-content hover:scale-105 transition-all"
+      title={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
+      className="fixed bottom-4 right-4 z-[9999] w-11 h-11 rounded-full border border-base-300 bg-base-100 shadow-xl flex items-center justify-center text-base-content/80 hover:text-base-content hover:scale-105 transition-all"
     >
-      {theme === "deepwork" ? <SunIcon /> : <MoonIcon />}
+      {theme === "light" ? <MoonIcon /> : <SunIcon />}
     </button>
   );
 }

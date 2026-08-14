@@ -1,19 +1,18 @@
 "use client";
 
-// 取代原生 confirm() 的通用確認彈窗。用法:
-//
-//   const [confirmState, setConfirmState] = useState(null);
-//   ...
-//   setConfirmState({
-//     title: "Cancel this booking?",
-//     description: "They'll be notified by email.",
-//     confirmLabel: "Cancel booking",
-//     danger: true,
-//     onConfirm: () => doTheThing(),
-//   });
-//   ...
-//   <ConfirmDialog state={confirmState} onClose={() => setConfirmState(null)} />
+import { useState, useEffect } from "react";
+
+// 取代原生 confirm() 的通用確認彈窗。
+// 可選 reasonField: { label, placeholder, optional } → 確認時把 reason 傳給 onConfirm(reason)
 export default function ConfirmDialog({ state, onClose }) {
+  const [reason, setReason] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    setReason("");
+    setSubmitting(false);
+  }, [state]);
+
   if (!state) return null;
 
   const {
@@ -23,11 +22,19 @@ export default function ConfirmDialog({ state, onClose }) {
     cancelLabel = "Cancel",
     danger = false,
     onConfirm,
+    reasonField,
   } = state;
 
-  function handleConfirm() {
-    onClose();
-    onConfirm?.();
+  async function handleConfirm() {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      // 先關彈窗，讓列表可以立刻更新（optimistic UI）
+      onClose();
+      await onConfirm?.(reasonField ? reason.trim() : undefined);
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -46,10 +53,30 @@ export default function ConfirmDialog({ state, onClose }) {
           )}
         </div>
 
+        {reasonField && (
+          <div>
+            <label className="block text-sm font-medium text-base-content/80 mb-1">
+              {reasonField.label || "Reason"}
+              {reasonField.optional !== false && (
+                <span className="text-base-content/40 font-normal"> (optional)</span>
+              )}
+            </label>
+            <textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              rows={3}
+              maxLength={500}
+              placeholder={reasonField.placeholder || ""}
+              className="textarea textarea-bordered w-full text-sm"
+            />
+          </div>
+        )}
+
         <div className="flex gap-2">
           <button
             type="button"
             onClick={onClose}
+            disabled={submitting}
             className="btn btn-ghost btn-sm flex-1"
           >
             {cancelLabel}
@@ -57,9 +84,10 @@ export default function ConfirmDialog({ state, onClose }) {
           <button
             type="button"
             onClick={handleConfirm}
+            disabled={submitting}
             className={`btn btn-sm flex-1 ${danger ? "btn-error" : "btn-primary"}`}
           >
-            {confirmLabel}
+            {submitting ? "…" : confirmLabel}
           </button>
         </div>
       </div>

@@ -32,7 +32,7 @@ export async function POST(req, { params }) {
     // token 要完全對上,不然任何人猜到 booking id 就能取消別人的預約
     const booking = await Booking.findOne({ _id: id, cancelToken: token }).populate(
       "eventType",
-      "title"
+      "title minimumNoticeMinutes"
     );
 
     if (!booking) {
@@ -41,6 +41,21 @@ export async function POST(req, { params }) {
 
     if (booking.status === "cancelled") {
       return NextResponse.json({ booking }); // 已經取消過了,直接回傳現況
+    }
+
+    // 取消截止時間 = EventType.minimumNoticeMinutes（與最短提前預約同一欄）
+    const noticeMins = booking.eventType?.minimumNoticeMinutes || 0;
+    if (noticeMins > 0) {
+      const deadline = new Date(booking.startTime.getTime() - noticeMins * 60 * 1000);
+      if (Date.now() > deadline.getTime()) {
+        return NextResponse.json(
+          {
+            error:
+              "This booking can no longer be cancelled — the cancellation deadline has passed.",
+          },
+          { status: 400 }
+        );
+      }
     }
 
     booking.status = "cancelled";

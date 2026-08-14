@@ -41,6 +41,7 @@ export default function EventTypeForm({ eventTypeId }) {
   const [color, setColor] = useState(COLOR_PRESETS[0]);
   const [requiresApproval, setRequiresApproval] = useState(true);
   const [bufferMinutes, setBufferMinutes] = useState(0);
+  const [slotIntervalMinutes, setSlotIntervalMinutes] = useState(0); // 0 = same as duration
   const [minimumNoticeHours, setMinimumNoticeHours] = useState(0);
   const [bookingWindowDays, setBookingWindowDays] = useState(60);
   const [maxBookingsPerDay, setMaxBookingsPerDay] = useState(0);
@@ -73,6 +74,7 @@ export default function EventTypeForm({ eventTypeId }) {
         setColor(et.color || COLOR_PRESETS[0]);
         setRequiresApproval(et.requiresApproval !== false);
         setBufferMinutes(et.bufferMinutes || 0);
+        setSlotIntervalMinutes(Number(et.slotIntervalMinutes) || 0);
         setMinimumNoticeHours((et.minimumNoticeMinutes || 0) / 60);
         setBookingWindowDays(
           et.bookingWindowDays === undefined ? 60 : et.bookingWindowDays
@@ -109,6 +111,7 @@ export default function EventTypeForm({ eventTypeId }) {
             color,
             requiresApproval,
             bufferMinutes,
+            slotIntervalMinutes: Number(slotIntervalMinutes) || 0,
             minimumNoticeMinutes: minimumNoticeHours * 60,
             bookingWindowDays,
             maxBookingsPerDay,
@@ -241,6 +244,29 @@ export default function EventTypeForm({ eventTypeId }) {
               <option value={30}>30 minutes</option>
               <option value={60}>60 minutes</option>
             </select>
+            <p className="text-xs text-base-content/50 mt-1">
+              Padding before and after this booking so it won&apos;t sit flush against another booking or meeting.
+            </p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-base-content/80 mb-1">
+              Start-time interval
+            </label>
+            <select
+              value={String(slotIntervalMinutes)}
+              onChange={(e) => setSlotIntervalMinutes(Number(e.target.value))}
+              className="select select-bordered select-sm w-full max-w-[200px]"
+            >
+              <option value="0">Same as duration (default)</option>
+              <option value="5">Every 5 minutes</option>
+              <option value="10">Every 10 minutes</option>
+              <option value="15">Every 15 minutes</option>
+              <option value="30">Every 30 minutes</option>
+              <option value="60">Every 60 minutes</option>
+            </select>
+            <p className="text-xs text-base-content/50 mt-1">
+              Gap between possible start times (e.g. every 15 min → 10:00, 10:15, 10:30). Each start still needs the full duration free inside your hours, and won&apos;t overlap other bookings/meetings including buffer.
+            </p>
           </div>
           <div>
             <label className="block text-sm font-medium text-base-content/80 mb-1">Minimum notice</label>

@@ -1,6 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // 減少大型套件的 client bundle 解析時間
+  experimental: {
+    optimizePackageImports: ["react-hot-toast", "react-tooltip"],
+  },
   images: {
     remotePatterns: [
       // NextJS <Image> component needs to whitelist domains for src={}

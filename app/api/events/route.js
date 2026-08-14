@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/libs/auth";
 import connectMongo from "@/libs/mongoose";
 import Event from "@/models/Event";
+import EventType from "@/models/EventType";
 import User from "@/models/User";
 import { resend, EMAIL_FROM } from "@/libs/resend";
 import { buildEventNotificationEmail } from "@/libs/emails/eventNotification";
@@ -9,6 +10,7 @@ import {
   checkCalendarConflict,
   pushEventToGoogleCalendar,
 } from "@/libs/googleCalendar";
+import { findInternalConflicts, conflictErrorMessage } from "@/libs/conflicts";
 
 export async function POST(req) {
   const session = await auth();
@@ -66,6 +68,34 @@ export async function POST(req) {
 
   const organizer = await User.findById(session.user.id);
 
+  // 與自己的預約 / 會議撞期一律擋下（不可略過）
+  // 會議與預約之間也要留緩衝：取此主辦人所有活動類型的最大 buffer
+  const eventTypes = await EventType.find({ user: session.user.id, isActive: true })
+    .select("bufferMinutes")
+    .lean();
+  const maxBuffer = eventTypes.reduce(
+    (m, et) => Math.max(m, Number(et.bufferMinutes) || 0),
+    0
+  );
+
+  const internalConflicts = await findInternalConflicts({
+    organizerId: session.user.id,
+    start,
+    end,
+    bufferMinutes: maxBuffer,
+  });
+  if (internalConflicts.length > 0) {
+    return NextResponse.json(
+      {
+        error: "conflict",
+        message: conflictErrorMessage(internalConflicts),
+        conflicts: internalConflicts,
+        source: "internal",
+      },
+      { status: 409 }
+    );
+  }
+
   const { checked, conflicts } = await checkCalendarConflict(
     session.user.id,
     start,
@@ -78,6 +108,7 @@ export async function POST(req) {
         error: "conflict",
         message: "This time overlaps with an existing event on your Google Calendar",
         conflicts,
+        source: "google",
       },
       { status: 409 }
     );

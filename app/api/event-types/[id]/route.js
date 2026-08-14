@@ -22,12 +22,20 @@ export async function GET(req, { params }) {
 
   await connectMongo();
 
-  const eventType = await EventType.findOne({ _id: id, user: session.user.id });
+  // lean：直接回傳 DB 文件上的欄位
+  const eventType = await EventType.findOne({ _id: id, user: session.user.id }).lean();
   if (!eventType) {
     return NextResponse.json({ error: "Event type not found" }, { status: 404 });
   }
 
-  return NextResponse.json({ eventType });
+  return NextResponse.json({
+    eventType: {
+      ...eventType,
+      id: String(eventType._id),
+      slotIntervalMinutes: Number(eventType.slotIntervalMinutes) || 0,
+      bufferMinutes: Number(eventType.bufferMinutes) || 0,
+    },
+  });
 }
 
 export async function PATCH(req, { params }) {
@@ -48,6 +56,7 @@ export async function PATCH(req, { params }) {
     isActive,
     requiresApproval,
     bufferMinutes,
+    slotIntervalMinutes,
     minimumNoticeMinutes,
     bookingWindowDays,
     maxBookingsPerDay,
@@ -83,15 +92,21 @@ export async function PATCH(req, { params }) {
   if (color !== undefined) eventType.color = color;
   if (isActive !== undefined) eventType.isActive = isActive;
   if (requiresApproval !== undefined) eventType.requiresApproval = requiresApproval;
-  if (bufferMinutes !== undefined) eventType.bufferMinutes = Number(bufferMinutes) || 0;
-  if (minimumNoticeMinutes !== undefined)
+  if (bufferMinutes !== undefined) {
+    eventType.bufferMinutes = Math.max(0, Number(bufferMinutes) || 0);
+  }
+  if (minimumNoticeMinutes !== undefined) {
     eventType.minimumNoticeMinutes = Number(minimumNoticeMinutes) || 0;
-  if (bookingWindowDays !== undefined)
+  }
+  if (bookingWindowDays !== undefined) {
     eventType.bookingWindowDays = Math.max(0, Number(bookingWindowDays) || 0);
-  if (maxBookingsPerDay !== undefined)
+  }
+  if (maxBookingsPerDay !== undefined) {
     eventType.maxBookingsPerDay = Math.max(0, Number(maxBookingsPerDay) || 0);
-  if (reminderMinutesBefore !== undefined)
+  }
+  if (reminderMinutesBefore !== undefined) {
     eventType.reminderMinutesBefore = Number(reminderMinutesBefore) || 0;
+  }
   if (reminderOffsets !== undefined) {
     eventType.reminderOffsets = Array.isArray(reminderOffsets)
       ? reminderOffsets.map(Number).filter((n) => n > 0)
@@ -102,9 +117,35 @@ export async function PATCH(req, { params }) {
   if (successTitle !== undefined) eventType.successTitle = successTitle;
   if (successMessage !== undefined) eventType.successMessage = successMessage;
 
+  // slotIntervalMinutes：文件層 + collection $set 雙寫，避免舊 schema 吃掉欄位
+  const interval =
+    slotIntervalMinutes !== undefined
+      ? Math.max(0, Number(slotIntervalMinutes) || 0)
+      : undefined;
+  if (interval !== undefined) {
+    eventType.set("slotIntervalMinutes", interval);
+  }
+
   await eventType.save();
 
-  return NextResponse.json({ eventType });
+  if (interval !== undefined) {
+    await EventType.collection.updateOne(
+      { _id: eventType._id },
+      { $set: { slotIntervalMinutes: interval } }
+    );
+  }
+
+  // 重新讀取，確認回傳值與 DB 一致
+  const fresh = await EventType.findById(eventType._id).lean();
+
+  return NextResponse.json({
+    eventType: {
+      ...fresh,
+      id: String(fresh._id),
+      slotIntervalMinutes: Number(fresh?.slotIntervalMinutes) || 0,
+      bufferMinutes: Number(fresh?.bufferMinutes) || 0,
+    },
+  });
 }
 
 export async function DELETE(req, { params }) {
@@ -121,10 +162,9 @@ export async function DELETE(req, { params }) {
     _id: id,
     user: session.user.id,
   });
-
   if (!eventType) {
     return NextResponse.json({ error: "Event type not found" }, { status: 404 });
   }
 
-  return NextResponse.json({ success: true });
+  return NextResponse.json({ ok: true });
 }

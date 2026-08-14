@@ -13,6 +13,7 @@ import {
   pushEventToGoogleCalendar,
 } from "@/libs/googleCalendar";
 import { canUseGoogleCalendarSync } from "@/libs/plans";
+import { findInternalConflicts, conflictErrorMessage } from "@/libs/conflicts";
 
 function appUrl() {
   return process.env.NEXT_PUBLIC_APP_URL || "";
@@ -32,7 +33,7 @@ export async function GET(req, { params }) {
 
     const booking = await Booking.findOne({ _id: id, cancelToken: token }).populate(
       "eventType",
-      "title duration location locationType slug"
+      "title duration location locationType slug bufferMinutes minimumNoticeMinutes"
     );
 
     if (!booking) {
@@ -102,7 +103,7 @@ export async function POST(req, { params }) {
 
     const booking = await Booking.findOne({ _id: id, cancelToken: token }).populate(
       "eventType",
-      "title duration location locationType slug"
+      "title duration location locationType slug bufferMinutes minimumNoticeMinutes"
     );
 
     if (!booking) {
@@ -137,6 +138,19 @@ export async function POST(req, { params }) {
       );
     }
 
+    const noticeMins = booking.eventType?.minimumNoticeMinutes || 0;
+    if (noticeMins > 0) {
+      const earliest = new Date(Date.now() + noticeMins * 60 * 1000);
+      if (newStart.getTime() < earliest.getTime()) {
+        return NextResponse.json(
+          {
+            error: `Please choose a time at least ${noticeMins} minutes from now`,
+          },
+          { status: 400 }
+        );
+      }
+    }
+
     const unchanged =
       newStart.getTime() === booking.startTime.getTime() &&
       newEnd.getTime() === booking.endTime.getTime();
@@ -144,17 +158,17 @@ export async function POST(req, { params }) {
       return NextResponse.json({ booking, rescheduled: false });
     }
 
-    // 與主辦人其他已確認預約撞期（排除自己）
-    const conflict = await Booking.findOne({
-      _id: { $ne: booking._id },
-      organizer: booking.organizer,
-      status: "confirmed",
-      startTime: { $lt: newEnd },
-      endTime: { $gt: newStart },
+    const bufferMinutes = booking.eventType?.bufferMinutes || 0;
+    const internalConflicts = await findInternalConflicts({
+      organizerId: booking.organizer,
+      start: newStart,
+      end: newEnd,
+      excludeBookingId: booking._id,
+      bufferMinutes,
     });
-    if (conflict) {
+    if (internalConflicts.length > 0) {
       return NextResponse.json(
-        { error: "That time is no longer available. Please pick another slot." },
+        { error: conflictErrorMessage(internalConflicts) },
         { status: 409 }
       );
     }

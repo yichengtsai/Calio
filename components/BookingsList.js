@@ -41,38 +41,76 @@ export default function BookingsList() {
     load();
   }, []);
 
-  async function updateStatus(booking, status) {
+    // 樂觀更新：先改本地狀態讓 pending 立刻消失，再打 API；失敗才還原
+  async function updateStatus(booking, status, extra = {}) {
+    const previous = bookings;
     setBusyId(booking.id);
+    setBookings((list) =>
+      (list || []).map((b) =>
+        b.id === booking.id
+          ? {
+              ...b,
+              status,
+              respondedAt: new Date().toISOString(),
+              ...(status === "cancelled" || status === "declined"
+                ? { cancelReason: extra.cancelReason || undefined }
+                : {}),
+            }
+          : b
+      )
+    );
+
     try {
       const res = await fetch(`/api/bookings/${booking.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ status, ...extra }),
       });
       const data = await res.json();
       if (!res.ok) {
+        setBookings(previous);
         toast.error(data.error || "Something went wrong");
-        return;
+        return false;
       }
-      await load();
+      // 用伺服器回傳對齊（含 meetingUrl 等），不整表重抓，避免閃爍
+      if (data.booking) {
+        setBookings((list) =>
+          (list || []).map((b) => (b.id === booking.id ? { ...b, ...data.booking } : b))
+        );
+      }
+      return true;
+    } catch (e) {
+      setBookings(previous);
+      toast.error("Something went wrong");
+      return false;
     } finally {
       setBusyId(null);
     }
   }
 
   async function handleApprove(booking) {
-    await updateStatus(booking, "confirmed");
-    toast.success("Approved");
+    const ok = await updateStatus(booking, "confirmed");
+    if (ok) toast.success("Approved — confirmation email sent");
   }
 
   function handleDecline(booking) {
     setConfirmState({
       title: `Decline the request from ${booking.inviteeName}?`,
+      description: "They'll get an email. You can optionally tell them why.",
       confirmLabel: "Decline",
       danger: true,
-      onConfirm: async () => {
-        await updateStatus(booking, "declined");
-        toast.success("Declined");
+      reasonField: {
+        label: "Reason",
+        placeholder: "e.g. That time no longer works for me — sorry!",
+        optional: true,
+      },
+      onConfirm: async (reason) => {
+        const ok = await updateStatus(
+          booking,
+          "declined",
+          reason ? { cancelReason: reason } : {}
+        );
+        if (ok) toast.success("Declined — email sent to guest");
       },
     });
   }

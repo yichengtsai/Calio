@@ -39,7 +39,7 @@ export async function GET(req) {
 
   await connectMongo();
 
-  const user = await User.findOne({ username });
+  const user = await User.findOne({ username }).lean();
   if (!user) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
@@ -48,36 +48,49 @@ export async function GET(req) {
     user: user._id,
     slug,
     isActive: true,
-  });
+  }).lean();
   if (!eventType) {
     return NextResponse.json({ error: "Event type not found" }, { status: 404 });
   }
 
-  const availability = await Availability.findOne({ user: user._id });
+  const availability = await Availability.findOne({ user: user._id }).lean();
   const timeSlots = availability?.timeSlots || [];
 
   const dayDate = new Date(`${date}T00:00:00Z`);
   const rangeStart = new Date(dayDate.getTime() - 24 * 60 * 60 * 1000);
   const rangeEnd = new Date(dayDate.getTime() + 2 * 24 * 60 * 60 * 1000);
 
+  const duration = Number(eventType.duration) || 30;
+  const bufferMinutes = Number(eventType.bufferMinutes) || 0;
+  const minimumNoticeMinutes = Number(eventType.minimumNoticeMinutes) || 0;
+  const bookingWindowDays = eventType.bookingWindowDays ?? 60;
+  const maxBookingsPerDay = Number(eventType.maxBookingsPerDay) || 0;
+  const slotIntervalMinutes = Number(eventType.slotIntervalMinutes) || 0;
+
   const [existingBookings, busyEvents, busyBlocks] = await Promise.all([
     Booking.find({
       organizer: user._id,
-      status: "confirmed",
+      status: { $in: ["pending", "confirmed"] },
       startTime: { $lt: rangeEnd },
       endTime: { $gt: rangeStart },
-    }).select("startTime endTime"),
+    })
+      .select("startTime endTime")
+      .lean(),
     Event.find({
       organizer: user._id,
       status: { $ne: "cancelled" },
       startTime: { $lt: rangeEnd },
       endTime: { $gt: rangeStart },
-    }).select("startTime endTime"),
+    })
+      .select("startTime endTime")
+      .lean(),
     Block.find({
       user: user._id,
       startTime: { $lt: rangeEnd },
       endTime: { $gt: rangeStart },
-    }).select("startTime endTime"),
+    })
+      .select("startTime endTime")
+      .lean(),
   ]);
 
   let googleBusy = [];
@@ -94,25 +107,35 @@ export async function GET(req) {
     }
   }
 
+  const busy = [...existingBookings, ...busyEvents, ...busyBlocks, ...googleBusy];
+
   const confirmedCountOnDate = existingBookings.filter((b) => {
-    return b.startTime.toISOString().slice(0, 10) === date;
+    try {
+      return new Date(b.startTime).toISOString().slice(0, 10) === date;
+    } catch {
+      return false;
+    }
   }).length;
 
   const slots = getSlotsForDate({
     timeSlots,
     timezone: user.timezone || "Asia/Taipei",
-    duration: eventType.duration,
+    duration,
     dateStr: date,
-    existingBookings: [...existingBookings, ...busyEvents, ...busyBlocks, ...googleBusy],
-    bufferMinutes: eventType.bufferMinutes || 0,
-    minimumNoticeMinutes: eventType.minimumNoticeMinutes || 0,
-    bookingWindowDays: eventType.bookingWindowDays ?? 60,
-    maxBookingsPerDay: eventType.maxBookingsPerDay || 0,
+    existingBookings: busy,
+    bufferMinutes,
+    minimumNoticeMinutes,
+    bookingWindowDays,
+    maxBookingsPerDay,
     confirmedCountOnDate,
+    slotIntervalMinutes,
   });
 
   return NextResponse.json({
     slots: slots.map((s) => s.start.toISOString()),
     timezone: user.timezone || "Asia/Taipei",
+    durationMinutes: duration,
+    bufferMinutes,
+    slotIntervalMinutes,
   });
 }

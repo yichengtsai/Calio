@@ -14,6 +14,39 @@ function formatWhen(start, end, timezone) {
   return `${dateFmt.format(start)} - ${endTimeOnly}`;
 }
 
+/** 把 minimumNoticeMinutes 轉成可讀文字，例如 "24 hours" / "2 days" */
+function formatNoticeLabel(minutes) {
+  if (!minutes || minutes <= 0) return null;
+  if (minutes % 1440 === 0) {
+    const d = minutes / 1440;
+    return `${d} day${d === 1 ? "" : "s"}`;
+  }
+  if (minutes % 60 === 0) {
+    const h = minutes / 60;
+    return `${h} hour${h === 1 ? "" : "s"}`;
+  }
+  return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+}
+
+/** 信尾：Reschedule / Cancel 連結 + 截止時間提醒 */
+function actionLinksBlock({ cancelUrl, rescheduleUrl, minimumNoticeMinutes }) {
+  const notice = formatNoticeLabel(minimumNoticeMinutes);
+  const hasLinks = Boolean(rescheduleUrl || cancelUrl);
+  const links = hasLinks
+    ? `<p style="font-size: 13px; margin-top: 20px; color: #6b7280;">
+      ${rescheduleUrl ? `<a href="${escapeHtml(rescheduleUrl)}" style="color: #2563eb;">Reschedule</a>` : ""}
+      ${rescheduleUrl && cancelUrl ? " · " : ""}
+      ${cancelUrl ? `<a href="${escapeHtml(cancelUrl)}" style="color: #6b7280;">Cancel</a>` : ""}
+    </p>`
+    : "";
+  const policy = notice
+    ? `<p style="font-size: 12px; color: #9ca3af; margin-top: 8px;">
+         Please reschedule or cancel at least <strong>${escapeHtml(notice)}</strong> before the start time.
+       </p>`
+    : "";
+  return `${links}${policy}`;
+}
+
 function wrapEmail(bodyHtml) {
   return `
   <div style="font-family: -apple-system, Segoe UI, Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 32px 24px; color: #1a1a1a;">
@@ -37,6 +70,7 @@ export function buildInviteeConfirmationEmail({
   inviteeName,
   cancelUrl,
   rescheduleUrl,
+  minimumNoticeMinutes,
 }) {
   const when = formatWhen(startTime, endTime, timezone);
   const joinBlock = meetingUrl
@@ -60,11 +94,7 @@ export function buildInviteeConfirmationEmail({
 
     <p style="font-size: 14px;">Hi ${escapeHtml(inviteeName)}, you're all set — this has been added as confirmed.</p>
 
-    <p style="font-size: 13px; margin-top: 20px; color: #6b7280;">
-      ${rescheduleUrl ? `<a href="${escapeHtml(rescheduleUrl)}" style="color: #2563eb;">Reschedule</a>` : ""}
-      ${rescheduleUrl && cancelUrl ? " · " : ""}
-      ${cancelUrl ? `<a href="${escapeHtml(cancelUrl)}" style="color: #6b7280;">Cancel</a>` : ""}
-    </p>
+    ${actionLinksBlock({ cancelUrl, rescheduleUrl, minimumNoticeMinutes })}
   `);
 
   return { subject: `Confirmed: ${eventTitle} (${when})`, html };
@@ -114,8 +144,19 @@ export function buildOrganizerNotificationEmail({
 
 /**
  * 給預約人(invitee)的「已收到請求,等待審核」信
+ * ← 補上 Reschedule 連結（原本只有 Cancel）
  */
-export function buildRequestReceivedEmail({ eventTitle, organizerName, startTime, endTime, timezone, inviteeName, cancelUrl, rescheduleUrl }) {
+export function buildRequestReceivedEmail({
+  eventTitle,
+  organizerName,
+  startTime,
+  endTime,
+  timezone,
+  inviteeName,
+  cancelUrl,
+  rescheduleUrl,
+  minimumNoticeMinutes,
+}) {
   const when = formatWhen(startTime, endTime, timezone);
 
   const html = wrapEmail(`
@@ -131,7 +172,7 @@ export function buildRequestReceivedEmail({ eventTitle, organizerName, startTime
 
     <p style="font-size: 14px;">Hi ${escapeHtml(inviteeName)}, this time isn't confirmed yet — ${escapeHtml(organizerName)} needs to approve it first. We'll email you as soon as they respond.</p>
 
-    ${cancelUrl ? `<p style="font-size: 13px; margin-top: 20px;"><a href="${escapeHtml(cancelUrl)}" style="color: #6b7280;">Changed your mind? Cancel this request</a></p>` : ""}
+    ${actionLinksBlock({ cancelUrl, rescheduleUrl, minimumNoticeMinutes })}
   `);
 
   return { subject: `Request sent: ${eventTitle} (${when})`, html };
@@ -140,8 +181,11 @@ export function buildRequestReceivedEmail({ eventTitle, organizerName, startTime
 /**
  * 給預約人(invitee)的「主辦人拒絕」信
  */
-export function buildDeclinedEmail({ eventTitle, organizerName, startTime, endTime, timezone, inviteeName }) {
+export function buildDeclinedEmail({ eventTitle, organizerName, startTime, endTime, timezone, inviteeName, reason }) {
   const when = formatWhen(startTime, endTime, timezone);
+  const reasonBlock = reason
+    ? `<p style="font-size: 14px; line-height: 1.6; color: #374151; margin-top: 12px; padding: 12px; background: #f9fafb; border-radius: 8px;"><strong>Note from ${escapeHtml(organizerName)}:</strong> ${escapeHtml(reason)}</p>`
+    : "";
 
   const html = wrapEmail(`
     <p style="font-size: 14px; color: #6b7280; margin: 0 0 4px;">Not available</p>
@@ -155,6 +199,7 @@ export function buildDeclinedEmail({ eventTitle, organizerName, startTime, endTi
     </table>
 
     <p style="font-size: 14px;">Hi ${escapeHtml(inviteeName)}, ${escapeHtml(organizerName)} isn't able to make this time. Feel free to pick another time that works.</p>
+    ${reasonBlock}
   `);
 
   return { subject: `Unavailable: ${eventTitle} (${when})`, html };
@@ -174,6 +219,7 @@ export function buildRescheduledEmail({
   inviteeName,
   cancelUrl,
   rescheduleUrl,
+  minimumNoticeMinutes,
 }) {
   const was = formatWhen(previousStartTime, previousEndTime, timezone);
   const now2 = formatWhen(startTime, endTime, timezone);
@@ -195,11 +241,7 @@ export function buildRescheduledEmail({
 
     <p style="font-size: 14px;">Hi ${escapeHtml(inviteeName)}, this booking has moved to a new time — it's still confirmed, no action needed.</p>
 
-    <p style="font-size: 13px; margin-top: 20px; color: #6b7280;">
-      ${rescheduleUrl ? `<a href="${escapeHtml(rescheduleUrl)}" style="color: #2563eb;">Reschedule again</a>` : ""}
-      ${rescheduleUrl && cancelUrl ? " · " : ""}
-      ${cancelUrl ? `<a href="${escapeHtml(cancelUrl)}" style="color: #6b7280;">Cancel</a>` : ""}
-    </p>
+    ${actionLinksBlock({ cancelUrl, rescheduleUrl, minimumNoticeMinutes })}
   `);
 
   return { subject: `Rescheduled: ${eventTitle} (${now2})`, html };

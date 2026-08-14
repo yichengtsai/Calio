@@ -45,7 +45,8 @@ export default function CreateEventForm({ eventId }) {
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [result, setResult] = useState(null); // { type: "success" | "error", message }
-  const [conflicts, setConflicts] = useState(null); // Google Calendar 衝突時間列表
+  const [conflicts, setConflicts] = useState(null);
+  const [conflictSource, setConflictSource] = useState(null); // "internal" | "google"
 
   // 編輯模式:先把現有資料抓回來灌進表單
   useEffect(() => {
@@ -147,6 +148,7 @@ export default function CreateEventForm({ eventId }) {
     setIsSubmitting(true);
     setResult(null);
     setConflicts(null);
+        setConflictSource(null);
 
     try {
       const { res, data } = await submitEvent();
@@ -154,6 +156,7 @@ export default function CreateEventForm({ eventId }) {
       if (res.status === 409) {
         // Google Calendar 上這段時間已經有其他行程,先讓使用者確認要不要照樣建立
         setConflicts(data.conflicts || []);
+        setConflictSource(data.source || "google");
         return;
       }
 
@@ -207,6 +210,7 @@ export default function CreateEventForm({ eventId }) {
 
   function handleSuccess(data) {
     setConflicts(null);
+        setConflictSource(null);
     setResult({
       type: "success",
       message: `Event created — ${data.emailsSent} invite${data.emailsSent === 1 ? "" : "s"} sent${
@@ -415,23 +419,35 @@ export default function CreateEventForm({ eventId }) {
       {conflicts && (
         <div className="alert alert-warning flex-col items-start gap-2">
           <p className="font-semibold text-sm">
-            This overlaps with {conflicts.length} event{conflicts.length === 1 ? "" : "s"} on your Google Calendar
+            {conflictSource === "internal"
+              ? "This time overlaps with one of your bookings or meetings in Calio. Pick another time."
+              : `This overlaps with ${conflicts.length} event${conflicts.length === 1 ? "" : "s"} on your Google Calendar`}
           </p>
           <ul className="text-sm space-y-1">
-            {conflicts.map((c, i) => (
-              <li key={i}>
-                {new Date(c.start).toLocaleString()} – {new Date(c.end).toLocaleString()}
-              </li>
-            ))}
+            {conflicts.map((c, i) => {
+              const start = c.startTime || c.start;
+              const end = c.endTime || c.end;
+              const label = c.title ? `${c.title}: ` : "";
+              return (
+                <li key={i}>
+                  {label}
+                  {start ? new Date(start).toLocaleString() : "?"}
+                  {" – "}
+                  {end ? new Date(end).toLocaleString() : "?"}
+                </li>
+              );
+            })}
           </ul>
-          <button
-            type="button"
-            onClick={handleCreateAnyway}
-            disabled={isSubmitting}
-            className="btn btn-sm btn-outline mt-1"
-          >
-            Create anyway
-          </button>
+          {conflictSource !== "internal" && (
+            <button
+              type="button"
+              onClick={handleCreateAnyway}
+              disabled={isSubmitting}
+              className="btn btn-sm btn-outline mt-1"
+            >
+              Create anyway
+            </button>
+          )}
         </div>
       )}
 

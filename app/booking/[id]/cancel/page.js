@@ -79,8 +79,7 @@ function CancelInner({ id }) {
 
   return (
     <main
-      className="min-h-screen py-16 px-6 flex items-center justify-center"
-      data-theme="deepwork"
+      className="min-h-screen py-16 px-6 flex items-center justify-center bg-base-100"
     >
       <div className="max-w-sm w-full rounded-2xl border border-base-300 bg-base-200 p-6 space-y-4">
         {error ? (
@@ -157,7 +156,7 @@ export default function CancelBookingPage({ params }) {
   return (
     <Suspense
       fallback={
-        <main className="min-h-screen flex items-center justify-center" data-theme="deepwork">
+        <main className="min-h-screen flex items-center justify-center bg-base-100" >
           <p className="text-sm text-base-content/50">Loading…</p>
         </main>
       }

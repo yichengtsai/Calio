@@ -23,7 +23,7 @@ export default function RootLayout({ children }) {
 	return (
 		<html
 			lang="en"
-			data-theme="deepwork"
+			data-theme="light"
 			className={font.className}
 			suppressHydrationWarning
 			translate="no"
@@ -39,8 +39,10 @@ export default function RootLayout({ children }) {
 				<Script id="theme-init" strategy="beforeInteractive">
 					{`
 						try {
-							var t = localStorage.getItem('theme') || 'deepwork';
+							var t = localStorage.getItem('theme') || 'light';
+							if (t !== 'light' && t !== 'deepwork') t = 'light';
 							document.documentElement.setAttribute('data-theme', t);
+							document.documentElement.style.colorScheme = t === 'deepwork' ? 'dark' : 'light';
 						} catch (e) {}
 					`}
 				</Script>

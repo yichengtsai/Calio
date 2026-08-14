@@ -62,6 +62,7 @@ export async function POST(req) {
     color,
     requiresApproval,
     bufferMinutes,
+    slotIntervalMinutes,
     minimumNoticeMinutes,
     bookingWindowDays,
     maxBookingsPerDay,
@@ -130,6 +131,7 @@ export async function POST(req) {
     color: color || undefined,
     requiresApproval: requiresApproval !== undefined ? requiresApproval : true,
     bufferMinutes: Number(bufferMinutes) || 0,
+    slotIntervalMinutes: Number(slotIntervalMinutes) || 0,
     minimumNoticeMinutes: Number(minimumNoticeMinutes) || 0,
     bookingWindowDays:
       bookingWindowDays !== undefined ? Math.max(0, Number(bookingWindowDays) || 0) : 60,
@@ -144,6 +146,11 @@ export async function POST(req) {
     successTitle: successTitle || undefined,
     successMessage: successMessage || undefined,
   });
+
+  await EventType.collection.updateOne(
+    { _id: eventType._id },
+    { $set: { slotIntervalMinutes: Math.max(0, Number(slotIntervalMinutes) || 0) } }
+  );
 
   return NextResponse.json({ eventType }, { status: 201 });
 }

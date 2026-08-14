@@ -36,12 +36,11 @@ export default function DashboardHub() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/bookings")
+    fetch("/api/bookings/pending-count")
       .then((res) => res.json())
       .then((data) => {
         if (cancelled) return;
-        const count = (data.bookings || []).filter((b) => b.status === "pending").length;
-        setPendingCount(count);
+        setPendingCount(data.count || 0);
       })
       .catch(() => {});
     return () => {
