@@ -62,47 +62,214 @@ function ClockIcon() {
   );
 }
 
+function formatPrice(price, currency = "TWD") {
+  if (price == null || price === "" || Number.isNaN(Number(price))) return null;
+  const n = Number(price);
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: currency || "TWD",
+      maximumFractionDigits: 0,
+    }).format(n);
+  } catch {
+    return `${currency || ""} ${n}`.trim();
+  }
+}
+
 const LOCATION_META = {
   video: { icon: <VideoIcon />, label: "Video call" },
   phone: { icon: <PhoneIcon />, label: "Phone call" },
   "in-person": { icon: <PinIcon />, label: "In person" },
 };
 
-export default function EventTypePicker({ username, eventTypes, organizerName, organizerImage, brandColor }) {
+/**
+ * 預約流程：
+ * 1. identify — 先填 email
+ * 2. pick — 依 email 顯示可預約課程（剩餘堂數、價錢）
+ * 3. book — 進入 BookingWidget 選時段
+ *
+ * 舊連結 ?event=slug 仍支援：有 email 時直接進該課；無 email 則 identify 後自動選該課。
+ */
+export default function EventTypePicker({
+  username,
+  eventTypes,
+  organizerName,
+  organizerImage,
+  brandColor,
+}) {
   const searchParams = useSearchParams();
-  // 舊版 /username/slug 網址現在會轉址回這裡並帶 ?event=slug,
-  // 讓分享出去的舊連結還是能直接展開對應的日曆,不用使用者自己重選一次。
   const eventFromQuery = searchParams.get("event");
-  const initialSlug = eventTypes.some((et) => et.slug === eventFromQuery) ? eventFromQuery : null;
+  const initialSlug = eventTypes.some((et) => et.slug === eventFromQuery)
+    ? eventFromQuery
+    : null;
 
-  const [selectedSlug, setSelectedSlug] = useState(initialSlug);
+  const [phase, setPhase] = useState("identify"); // identify | pick | book
+  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
+  const [courses, setCourses] = useState([]);
+  const [selectedSlug, setSelectedSlug] = useState(null);
+  const [isChecking, setIsChecking] = useState(false);
+  const [error, setError] = useState(null);
+  const [pendingSlug, setPendingSlug] = useState(initialSlug);
+
   const widgetRef = useRef(null);
-
-  const selected = eventTypes.find((et) => et.slug === selectedSlug) || null;
-
-  // 選好項目、日曆展開之後,順手滾到看得到的地方,尤其手機版列表比較長的時候有感。
-  // 如果是從舊連結帶 ?event= 進來、一開始就自動選好的,就不用特地滾,畫面本來就在頂部。
   const isFirstRender = useRef(true);
+
+  const selected =
+    courses.find((et) => et.slug === selectedSlug) ||
+    eventTypes.find((et) => et.slug === selectedSlug) ||
+    null;
+
   useEffect(() => {
     if (isFirstRender.current) {
       isFirstRender.current = false;
       return;
     }
-    if (selected && widgetRef.current) {
+    if (phase === "book" && selected && widgetRef.current) {
       widgetRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
     }
-  }, [selected]);
+  }, [phase, selected]);
 
-  if (selected) {
+  async function handleIdentify(e) {
+    e.preventDefault();
+    setError(null);
+    setIsChecking(true);
+    try {
+      const res = await fetch(
+        `/api/public/student-courses?username=${encodeURIComponent(
+          username
+        )}&email=${encodeURIComponent(email.trim())}`
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Could not look up courses");
+        return;
+      }
+      if (data.inviteeName && !name) setName(data.inviteeName);
+
+      const list = data.courses || [];
+      setCourses(list);
+
+      // 舊連結指定某一課：若該課在可約列表中，直接進入
+      const want = pendingSlug;
+      if (want && list.some((c) => c.slug === want)) {
+        setSelectedSlug(want);
+        setPhase("book");
+        return;
+      }
+
+      if (list.length === 0) {
+        setError(
+          "No bookable courses for this email. Please contact the host to activate a session package, or check the email address."
+        );
+        setPhase("pick");
+        return;
+      }
+
+      setPhase("pick");
+    } catch {
+      setError("Something went wrong. Please try again.");
+    } finally {
+      setIsChecking(false);
+    }
+  }
+
+  function handleSelectCourse(slug) {
+    setSelectedSlug(slug);
+    setPhase("book");
+  }
+
+  function handleBackToPick() {
+    setSelectedSlug(null);
+    setPhase("pick");
+  }
+
+  function handleChangeEmail() {
+    setSelectedSlug(null);
+    setCourses([]);
+    setError(null);
+    setPendingSlug(null);
+    setPhase("identify");
+  }
+
+  // —— Step 1: email ——
+  if (phase === "identify") {
+    return (
+      <div className="rounded-2xl border border-base-300 bg-base-200 overflow-hidden shadow-sm">
+        <div className="h-1.5" style={{ backgroundColor: brandColor }} />
+        <form onSubmit={handleIdentify} className="p-6 sm:p-8 space-y-5">
+          <div className="text-center space-y-1">
+            <h2 className="text-lg font-bold">請先輸入 Email 才能預約</h2>
+            <p className="text-sm text-base-content/60">
+              輸入學員 Email 後，才會顯示你可預約的課程、剩餘堂數與費用。
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-base-content/80 mb-1">
+              Email
+            </label>
+            <input
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="input input-bordered w-full"
+              placeholder="you@example.com"
+              autoComplete="email"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-base-content/80 mb-1">
+              Name <span className="text-base-content/40 font-normal">(optional)</span>
+            </label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="input input-bordered w-full"
+              placeholder="Your name"
+              autoComplete="name"
+            />
+          </div>
+
+          {error && <p className="text-sm text-error">{error}</p>}
+
+          <button
+            type="submit"
+            disabled={isChecking}
+            style={{ backgroundColor: brandColor, borderColor: brandColor }}
+            className="btn w-full text-white border-0"
+          >
+            {isChecking ? "查詢中…" : "繼續查看可預約課程"}
+          </button>
+        </form>
+      </div>
+    );
+  }
+
+  // —— Step 3: booking widget ——
+  if (phase === "book" && selected) {
     return (
       <div ref={widgetRef} className="space-y-4 animate-appearFromRight scroll-mt-6">
-        <button
-          type="button"
-          onClick={() => setSelectedSlug(null)}
-          className="text-sm text-base-content/50 hover:text-base-content flex items-center gap-1"
-        >
-          ← Choose a different type
-        </button>
+        <div className="flex flex-wrap items-center gap-3 text-sm">
+          <button
+            type="button"
+            onClick={handleBackToPick}
+            className="text-base-content/50 hover:text-base-content flex items-center gap-1"
+          >
+            ← Choose a different course
+          </button>
+          <span className="text-base-content/30">·</span>
+          <button
+            type="button"
+            onClick={handleChangeEmail}
+            className="text-base-content/50 hover:text-base-content"
+          >
+            Change email ({email})
+          </button>
+        </div>
 
         <BookingWidget
           key={selected.slug}
@@ -112,63 +279,205 @@ export default function EventTypePicker({ username, eventTypes, organizerName, o
           organizerImage={organizerImage}
           brandColor={brandColor}
           eventType={selected}
+          initialEmail={email}
+          initialName={name}
+          initialRemainingSessions={
+            selected.requiresSessionPackage ? selected.remainingSessions : null
+          }
         />
       </div>
     );
   }
 
+  // —— Step 2: course list ——
+  const packageCourses = courses.filter((c) => c.requiresSessionPackage);
+  const openCourses = courses.filter((c) => !c.requiresSessionPackage);
+
+  function CourseCard({ et }) {
+    const locationType = getLocationType(et);
+    const meta = locationType ? LOCATION_META[locationType] : null;
+    const priceLabel = formatPrice(et.price, et.currency);
+    const isPackage = Boolean(et.requiresSessionPackage);
+
+    return (
+      <button
+        type="button"
+        onClick={() => handleSelectCourse(et.slug)}
+        className="group block w-full text-left rounded-xl border border-base-300 bg-base-100 p-5 transition-all hover:border-[var(--brand-color)] hover:shadow-md active:scale-[0.99]"
+        style={{ "--brand-color": et.color || brandColor }}
+      >
+        <div className="flex items-start justify-between gap-3 mb-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <span
+              className="w-2.5 h-2.5 rounded-full shrink-0"
+              style={{ backgroundColor: et.color }}
+            />
+            <p className="font-semibold truncate">{et.title}</p>
+          </div>
+          {isPackage ? (
+            <span className="shrink-0 badge badge-success badge-sm gap-1">
+              堂數方案
+            </span>
+          ) : (
+            <span className="shrink-0 badge badge-ghost badge-sm">開放預約</span>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-base-content/50 mb-2">
+          <span className="flex items-center gap-1">
+            <ClockIcon />
+            {et.duration} 分鐘
+          </span>
+          {meta && (
+            <span className="flex items-center gap-1">
+              {meta.icon}
+              {meta.label}
+            </span>
+          )}
+        </div>
+
+        {et.description && (
+          <p className="text-sm text-base-content/60 leading-relaxed mb-3 line-clamp-2">
+            {et.description}
+          </p>
+        )}
+
+        {/* 方案課：剩餘堂數 + 費用 */}
+        {isPackage && (
+          <div className="rounded-lg bg-success/10 border border-success/20 px-3 py-2.5 space-y-1 mb-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-sm font-semibold text-success">
+                剩餘 {et.remainingSessions ?? 0} 堂
+                {et.totalSessions != null ? (
+                  <span className="font-normal text-success/70">
+                    {" "}
+                    / 共 {et.totalSessions} 堂
+                  </span>
+                ) : null}
+              </span>
+              {priceLabel && (
+                <span className="text-sm font-bold text-base-content">
+                  {priceLabel}
+                  <span className="text-xs font-normal text-base-content/50">
+                    {" "}
+                    / 堂參考價
+                  </span>
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-base-content/55 leading-relaxed">
+              此課程已綁定你的堂數方案。點選後選擇時段即可預約，上課後會扣除 1
+              堂。
+            </p>
+          </div>
+        )}
+
+        {/* 開放課：操作說明 */}
+        {!isPackage && (
+          <div className="rounded-lg bg-base-200/80 border border-base-300 px-3 py-2.5 space-y-1 mb-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs font-medium text-base-content/70">
+                無需堂數，可直接預約
+              </span>
+              {priceLabel && (
+                <span className="text-sm font-bold text-base-content">
+                  {priceLabel}
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-base-content/55 leading-relaxed">
+              點選此課程 → 選擇日期與時段 → 確認資料送出。若需付費或審核，教練會再與你聯繫。
+            </p>
+          </div>
+        )}
+
+        <p className="text-xs font-medium text-primary group-hover:underline">
+          點此選擇時段 →
+        </p>
+      </button>
+    );
+  }
+
   return (
-    <div className="rounded-2xl bg-base-200/40 p-5 sm:p-6 space-y-4 animate-opacity">
-      <div className="text-center space-y-1">
-        <h2 className="text-lg font-bold">What would you like to book?</h2>
-        <p className="text-xs text-base-content/45">Times are shown in your local timezone.</p>
+    <div className="rounded-2xl bg-base-200/40 p-5 sm:p-6 space-y-5 animate-opacity">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <div className="space-y-0.5">
+          <h2 className="text-lg font-bold">你可預約的課程</h2>
+          <p className="text-xs text-base-content/45">
+            目前身分：
+            <span className="font-medium text-base-content/70">{email}</span>
+            {name ? ` · ${name}` : ""}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={handleChangeEmail}
+          className="btn btn-ghost btn-xs self-start"
+        >
+          更換 Email
+        </button>
       </div>
 
-      {eventTypes.length === 0 ? (
-        <p className="text-center text-base-content/50 text-sm py-6">
-          No booking types are open right now — check back soon.
-        </p>
+      {/* 總操作說明 */}
+      <div className="rounded-xl border border-base-300 bg-base-100 px-4 py-3 text-sm text-base-content/70 space-y-1">
+        <p className="font-medium text-base-content">如何預約？</p>
+        <ol className="list-decimal list-inside text-xs space-y-0.5 text-base-content/55">
+          <li>下方分為「堂數方案課程」與「開放預約課程」</li>
+          <li>點選你要的課程</li>
+          <li>在日曆上選擇日期與時段並送出</li>
+        </ol>
+      </div>
+
+      {error && <p className="text-sm text-error">{error}</p>}
+
+      {courses.length === 0 ? (
+        <div className="text-center py-8 space-y-2">
+          <p className="text-base-content/50 text-sm">
+            這個 Email 目前沒有可預約的課程。
+          </p>
+          <p className="text-xs text-base-content/40">
+            若你已購買堂數，請確認 Email 是否正確，或聯絡教練為你開通方案。
+          </p>
+        </div>
       ) : (
-        <div className="space-y-3">
-          {eventTypes.map((et) => {
-            const locationType = getLocationType(et);
-            const meta = locationType ? LOCATION_META[locationType] : null;
+        <div className="space-y-6">
+          {packageCourses.length > 0 && (
+            <section className="space-y-3">
+              <div>
+                <h3 className="text-sm font-bold flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-success" />
+                  堂數方案課程
+                </h3>
+                <p className="text-xs text-base-content/45 mt-0.5">
+                  已為你開通的課程，會顯示剩餘堂數；預約並完成上課後扣除 1 堂。
+                </p>
+              </div>
+              <div className="space-y-3">
+                {packageCourses.map((et) => (
+                  <CourseCard key={et.slug} et={et} />
+                ))}
+              </div>
+            </section>
+          )}
 
-            return (
-              <button
-                key={et.slug}
-                type="button"
-                onClick={() => setSelectedSlug(et.slug)}
-                className="group block w-full text-left rounded-xl border border-base-300 bg-base-100 p-5 transition-all hover:border-[var(--brand-color)] hover:shadow-md active:scale-[0.99]"
-                style={{ "--brand-color": et.color || brandColor }}
-              >
-                <div className="flex items-center gap-2 mb-1.5">
-                  <span
-                    className="w-2.5 h-2.5 rounded-full shrink-0"
-                    style={{ backgroundColor: et.color }}
-                  />
-                  <p className="font-semibold">{et.title}</p>
-                </div>
-
-                <div className="flex items-center gap-3 text-xs text-base-content/50 mb-2">
-                  <span className="flex items-center gap-1">
-                    <ClockIcon />
-                    {et.duration} min
-                  </span>
-                  {meta && (
-                    <span className="flex items-center gap-1">
-                      {meta.icon}
-                      {meta.label}
-                    </span>
-                  )}
-                </div>
-
-                {et.description && (
-                  <p className="text-sm text-base-content/60 leading-relaxed">{et.description}</p>
-                )}
-              </button>
-            );
-          })}
+          {openCourses.length > 0 && (
+            <section className="space-y-3">
+              <div>
+                <h3 className="text-sm font-bold flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-base-content/30" />
+                  開放預約課程
+                </h3>
+                <p className="text-xs text-base-content/45 mt-0.5">
+                  不需堂數方案，任何人填完資料即可申請時段。
+                </p>
+              </div>
+              <div className="space-y-3">
+                {openCourses.map((et) => (
+                  <CourseCard key={et.slug} et={et} />
+                ))}
+              </div>
+            </section>
+          )}
         </div>
       )}
     </div>

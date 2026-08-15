@@ -62,6 +62,8 @@ export async function POST(req) {
     color,
     requiresApproval,
     requiresSessionPackage,
+    price,
+    currency,
     bufferMinutes,
     slotIntervalMinutes,
     minimumNoticeMinutes,
@@ -132,6 +134,11 @@ export async function POST(req) {
     color: color || undefined,
     requiresApproval: requiresApproval !== undefined ? requiresApproval : true,
     requiresSessionPackage: Boolean(requiresSessionPackage),
+    price:
+      price === "" || price === null || price === undefined
+        ? null
+        : Math.max(0, Number(price)),
+    currency: currency || "TWD",
     bufferMinutes: Number(bufferMinutes) || 0,
     slotIntervalMinutes: Number(slotIntervalMinutes) || 0,
     minimumNoticeMinutes: Number(minimumNoticeMinutes) || 0,

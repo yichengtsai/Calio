@@ -56,6 +56,8 @@ export async function PATCH(req, { params }) {
     isActive,
     requiresApproval,
     requiresSessionPackage,
+    price,
+    currency,
     bufferMinutes,
     slotIntervalMinutes,
     minimumNoticeMinutes,
@@ -95,6 +97,13 @@ export async function PATCH(req, { params }) {
   if (requiresApproval !== undefined) eventType.requiresApproval = requiresApproval;
   if (requiresSessionPackage !== undefined)
     eventType.requiresSessionPackage = Boolean(requiresSessionPackage);
+  if (price !== undefined) {
+    eventType.price =
+      price === "" || price === null
+        ? null
+        : Math.max(0, Number(price));
+  }
+  if (currency !== undefined) eventType.currency = currency || "TWD";
   if (bufferMinutes !== undefined) {
     eventType.bufferMinutes = Math.max(0, Number(bufferMinutes) || 0);
   }

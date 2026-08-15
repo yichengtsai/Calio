@@ -40,6 +40,8 @@ export default async function PublicProfilePage({ params }) {
     locationType: et.locationType || "custom",
     color: et.color || brandColor,
     requiresSessionPackage: Boolean(et.requiresSessionPackage),
+    price: et.price != null ? Number(et.price) : null,
+    currency: et.currency || "TWD",
   }));
 
   // Client Component 只能收 plain object，不能傳 Mongoose document

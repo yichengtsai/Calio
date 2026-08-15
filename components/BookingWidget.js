@@ -156,6 +156,10 @@ export default function BookingWidget({
   organizerName,
   organizerImage,
   brandColor = "#6366f1",
+  /** 從父層（EventTypePicker）已驗證過的 email / 剩餘堂數，可略過 identify 步驟 */
+  initialEmail = "",
+  initialName = "",
+  initialRemainingSessions = null,
 }) {
   const [mounted, setMounted] = useState(false);
   // 預約人自己選的時區,一開始自動偵測瀏覽器時區,但可以手動換
@@ -169,8 +173,16 @@ export default function BookingWidget({
   const [isLoadingCalendar, setIsLoadingCalendar] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState(null);
   const needsPackage = Boolean(eventType?.requiresSessionPackage);
-  const [step, setStep] = useState(needsPackage ? "identify" : "select-time"); // identify | select-time | details | success
-  const [remainingSessions, setRemainingSessions] = useState(null);
+  // 若父層已帶入 email +（需堂數時）剩餘堂數，直接進選時段
+  const preVerified =
+    Boolean(initialEmail) &&
+    (!needsPackage || (initialRemainingSessions != null && initialRemainingSessions > 0));
+  const [step, setStep] = useState(
+    preVerified ? "select-time" : needsPackage ? "identify" : "select-time"
+  ); // identify | select-time | details | success
+  const [remainingSessions, setRemainingSessions] = useState(
+    preVerified && needsPackage ? initialRemainingSessions : null
+  );
   const [isCheckingPackage, setIsCheckingPackage] = useState(false);
 
   // 需堂數的課程：一定要先通過 email 驗證，不能直接選時段
@@ -183,8 +195,8 @@ export default function BookingWidget({
   // 存起來才能在完成畫面上直接顯示取消連結,不用讓客戶只能從信箱裡找
   const [confirmedBooking, setConfirmedBooking] = useState(null);
 
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
+  const [name, setName] = useState(initialName || "");
+  const [email, setEmail] = useState(initialEmail || "");
   const [notes, setNotes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState(null);

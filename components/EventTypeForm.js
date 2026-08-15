@@ -41,6 +41,8 @@ export default function EventTypeForm({ eventTypeId }) {
   const [color, setColor] = useState(COLOR_PRESETS[0]);
   const [requiresApproval, setRequiresApproval] = useState(true);
   const [requiresSessionPackage, setRequiresSessionPackage] = useState(false);
+  const [price, setPrice] = useState("");
+  const [currency, setCurrency] = useState("TWD");
   const [bufferMinutes, setBufferMinutes] = useState(0);
   const [slotIntervalMinutes, setSlotIntervalMinutes] = useState(0); // 0 = same as duration
   const [minimumNoticeHours, setMinimumNoticeHours] = useState(0);
@@ -75,6 +77,8 @@ export default function EventTypeForm({ eventTypeId }) {
         setColor(et.color || COLOR_PRESETS[0]);
         setRequiresApproval(et.requiresApproval !== false);
         setRequiresSessionPackage(Boolean(et.requiresSessionPackage));
+        setPrice(et.price != null && et.price !== "" ? String(et.price) : "");
+        setCurrency(et.currency || "TWD");
         setBufferMinutes(et.bufferMinutes || 0);
         setSlotIntervalMinutes(Number(et.slotIntervalMinutes) || 0);
         setMinimumNoticeHours((et.minimumNoticeMinutes || 0) / 60);
@@ -113,6 +117,8 @@ export default function EventTypeForm({ eventTypeId }) {
             color,
             requiresApproval,
             requiresSessionPackage,
+            price: price === "" ? null : Number(price),
+            currency,
             bufferMinutes,
             slotIntervalMinutes: Number(slotIntervalMinutes) || 0,
             minimumNoticeMinutes: minimumNoticeHours * 60,
@@ -157,6 +163,36 @@ export default function EventTypeForm({ eventTypeId }) {
         <label className="block text-sm font-medium text-base-content/80 mb-1">Description (optional)</label>
         <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3}
           className="textarea textarea-bordered w-full" placeholder="What's this meeting about?" />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-sm font-medium text-base-content/80 mb-1">Price (optional)</label>
+          <input
+            type="number"
+            min={0}
+            step="1"
+            value={price}
+            onChange={(e) => setPrice(e.target.value)}
+            className="input input-bordered w-full"
+            placeholder="e.g. 1500"
+          />
+          <p className="text-xs text-base-content/50 mt-1">Shown on booking page. Leave empty to hide.</p>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-base-content/80 mb-1">Currency</label>
+          <select
+            value={currency}
+            onChange={(e) => setCurrency(e.target.value)}
+            className="select select-bordered w-full"
+          >
+            <option value="TWD">TWD</option>
+            <option value="USD">USD</option>
+            <option value="HKD">HKD</option>
+            <option value="SGD">SGD</option>
+            <option value="MYR">MYR</option>
+            <option value="JPY">JPY</option>
+          </select>
+        </div>
       </div>
       <div>
         <label className="block text-sm font-medium text-base-content/80 mb-2">Duration</label>

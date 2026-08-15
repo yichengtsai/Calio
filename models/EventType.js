@@ -29,6 +29,9 @@ const eventTypeSchema = new mongoose.Schema(
     requiresApproval: { type: Boolean, default: true },
     // 需堂數：預約前查方案，上課時間到且未取消才扣 1 堂
     requiresSessionPackage: { type: Boolean, default: false },
+    // 顯示用價格（可選）；0 或 null 表示不顯示
+    price: { type: Number, min: 0, default: null },
+    currency: { type: String, trim: true, default: "TWD", maxlength: 8 },
     bufferMinutes: { type: Number, default: 0, min: 0 },
     slotIntervalMinutes: { type: Number, default: 0, min: 0 },
     minimumNoticeMinutes: { type: Number, default: 0, min: 0 },
@@ -49,6 +52,12 @@ if (mongoose.models.EventType) {
   const s = mongoose.models.EventType.schema;
   if (!s.path("slotIntervalMinutes")) {
     s.add({ slotIntervalMinutes: { type: Number, default: 0, min: 0 } });
+  }
+  if (!s.path("price")) {
+    s.add({
+      price: { type: Number, min: 0, default: null },
+      currency: { type: String, trim: true, default: "TWD", maxlength: 8 },
+    });
   }
 }
 
