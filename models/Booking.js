@@ -63,6 +63,8 @@ const bookingSchema = new mongoose.Schema(
 bookingSchema.index({ organizer: 1, startTime: 1, status: 1 });
 // pending count / 狀態篩選
 bookingSchema.index({ organizer: 1, status: 1 });
+// 堂數占用查詢
+bookingSchema.index({ sessionPackage: 1, status: 1, sessionDeductedAt: 1 });
 
 bookingSchema.plugin(toJSON);
 

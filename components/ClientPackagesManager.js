@@ -264,8 +264,13 @@ export default function ClientPackagesManager() {
                       <span className="font-semibold">{p.remainingSessions}</span>
                       <span className="text-base-content/40 text-xs">
                         {" "}
-                        / {p.totalSessions}
+                        可約 / {p.totalSessions}
                       </span>
+                      {p.reservedSessions > 0 && (
+                        <div className="text-xs text-warning">
+                          {p.reservedSessions} 已預約未上
+                        </div>
+                      )}
                     </td>
                     <td>
                       <span className="badge badge-ghost badge-sm">{p.status}</span>

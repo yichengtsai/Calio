@@ -160,9 +160,20 @@ export default function EventTypeForm({ eventTypeId }) {
           className="input input-bordered w-full" placeholder="e.g. 30 Minute Consultation" />
       </div>
       <div>
-        <label className="block text-sm font-medium text-base-content/80 mb-1">Description (optional)</label>
-        <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3}
-          className="textarea textarea-bordered w-full" placeholder="What's this meeting about?" />
+        <label className="block text-sm font-medium text-base-content/80 mb-1">
+          Session description / focus (visible to guests)
+        </label>
+        <textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          rows={5}
+          maxLength={2000}
+          className="textarea textarea-bordered w-full"
+          placeholder="e.g. Focus on lower-body strength and stability. Best for intermediate trainees. Wear training shoes; arrive 5 minutes early."
+        />
+        <p className="text-xs text-base-content/50 mt-1">
+          Shown on the guest booking list and booking page. Include teaching focus, who it is for, and any notes.
+        </p>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>

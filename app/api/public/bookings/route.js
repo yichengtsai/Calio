@@ -163,7 +163,7 @@ export async function POST(req) {
         return NextResponse.json(
           {
             error:
-              "No remaining sessions for this course. Please contact the host to activate a package.",
+              "此課程已無可約堂數（含已預約未上的時段）。請聯絡教練確認方案。",
             code: "no_session_package",
           },
           { status: 403 }

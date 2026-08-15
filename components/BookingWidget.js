@@ -160,10 +160,12 @@ export default function BookingWidget({
   initialEmail = "",
   initialName = "",
   initialRemainingSessions = null,
+  initialTimezone = null,
+  onTimezoneChange = null,
 }) {
   const [mounted, setMounted] = useState(false);
   // 預約人自己選的時區,一開始自動偵測瀏覽器時區,但可以手動換
-  const [timezone, setTimezone] = useState(null);
+  const [timezone, setTimezone] = useState(initialTimezone || null);
   const [monthCursor, setMonthCursor] = useState(null); // { year, month } — month 0-indexed
   const [selectedDate, setSelectedDate] = useState(null);
   // 原始時段資料快取:dateStr -> [ISO string, ...]。用整月為單位一次向後端要,
@@ -203,13 +205,17 @@ export default function BookingWidget({
 
   useEffect(() => {
     setMounted(true);
-    setTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone);
-  }, []);
+    if (!timezone) {
+      setTimezone(
+        initialTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone
+      );
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleTimezoneChange(tz) {
     setTimezone(tz);
-    // 原始時段資料(UTC 時間戳)跟時區無關,不用清快取——換時區只是重新
-    // 用新時區去篩選/顯示同一份資料,所以這裡不用再重新打 API。
+    if (typeof onTimezoneChange === "function") onTimezoneChange(tz);
+    // Raw slot data is UTC; changing TZ only re-filters display — no refetch.
     setSelectedDate(null);
     setSelectedSlot(null);
   }
@@ -351,7 +357,7 @@ export default function BookingWidget({
       }
       if (!data.hasPackage || !(data.remainingSessions > 0)) {
         setError(
-          "No remaining sessions for this course. Please contact the host to activate a package."
+          "No sessions left for this course. Please contact the host to activate a package."
         );
         setRemainingSessions(0);
         return;
@@ -594,15 +600,22 @@ export default function BookingWidget({
         <div key="select-time" className="p-6 space-y-5 animate-opacity">
         {remainingSessions != null && (
           <div className="mx-6 mt-4 rounded-lg bg-success/10 border border-success/30 px-3 py-2 text-sm text-success">
-            Remaining sessions for this course: <strong>{remainingSessions}</strong>
+            <strong>{remainingSessions}</strong> session
+            {remainingSessions === 1 ? "" : "s"} available for this course
+            <span className="block text-xs text-success/70 mt-0.5 font-normal">
+              Includes upcoming bookings so you can&apos;t overbook.
+            </span>
           </div>
         )}
           {/* 預約人自己選時區:所有日期、時段都會依這裡自動換算顯示 */}
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wide text-base-content/40 mb-1.5">
-              Your timezone
+              Timezone
             </label>
             <TimezoneSelect value={timezone} onChange={handleTimezoneChange} />
+            <p className="text-[11px] text-base-content/40 mt-1">
+              Pre-filled from your booking page. You can still change it here.
+            </p>
           </div>
 
           {/* 月曆 */}

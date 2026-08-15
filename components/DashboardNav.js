@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
 
 const SECTIONS = [
   {
@@ -11,6 +12,7 @@ const SECTIONS = [
       { name: "Calendar", href: "/dashboard", match: (p, tab) => p === "/dashboard" },
       { name: "Insights", href: "/dashboard/insights" },
       { name: "Packages", href: "/dashboard/packages" },
+      { name: "Platform", href: "/dashboard/feedback" },
     ],
   },
   {
@@ -22,11 +24,27 @@ const SECTIONS = [
   },
 ];
 
+const PLATFORM_ADMIN_EMAILS = ["yichengcai509@gmail.com"];
+
 export default function DashboardNav() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const { data: session } = useSession();
+  const isPlatformAdmin = PLATFORM_ADMIN_EMAILS.some(
+    (e) => e.toLowerCase() === (session?.user?.email || "").toLowerCase()
+  );
   const [pendingCount, setPendingCount] = useState(0);
   const fetchedOnce = useRef(false);
+
+  const visibleSections = useMemo(() => {
+    return SECTIONS.map((section) => ({
+      ...section,
+      items: section.items.filter((item) => {
+        if (item.href === "/dashboard/feedback") return isPlatformAdmin;
+        return true;
+      }),
+    })).filter((section) => section.items.length > 0);
+  }, [isPlatformAdmin]);
 
   function loadPendingCount() {
     fetch("/api/bookings/pending-count")
@@ -53,7 +71,7 @@ export default function DashboardNav() {
 
   return (
     <nav className="flex-1 px-3 py-4 space-y-5">
-      {SECTIONS.map((section) => (
+      {visibleSections.map((section) => (
         <div key={section.label}>
           <p className="px-3 mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-base-content/35">
             {section.label}

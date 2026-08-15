@@ -7,6 +7,7 @@ import Booking from "@/models/Booking";
 import config from "@/config";
 import SocialLinks from "@/components/SocialLinks";
 import EventTypePicker from "@/components/EventTypePicker";
+import FeedbackForm from "@/components/FeedbackForm";
 
 export default async function PublicProfilePage({ params }) {
   const { username } = await params;
@@ -105,6 +106,8 @@ export default async function PublicProfilePage({ params }) {
             brandColor={brandColor}
           />
         </Suspense>
+
+        <FeedbackForm username={username} compact />
 
         <p className="text-center text-xs text-base-content/30">
           Powered by {config.appName}

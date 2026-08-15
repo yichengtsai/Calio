@@ -3,6 +3,7 @@ import { auth } from "@/libs/auth";
 import connectMongo from "@/libs/mongoose";
 import ClientPackage from "@/models/ClientPackage";
 import EventType from "@/models/EventType";
+import { getPackageAvailability } from "@/libs/sessions";
 
 export async function GET() {
   const session = await auth();
@@ -17,14 +18,21 @@ export async function GET() {
     .sort({ updatedAt: -1 })
     .lean();
 
-  const mapped = packages.map((p) => ({
-    ...p,
-    id: String(p._id),
-    remainingSessions: Math.max(0, (p.totalSessions || 0) - (p.usedSessions || 0)),
-    eventType: p.eventType
-      ? { ...p.eventType, id: String(p.eventType._id) }
-      : null,
-  }));
+  const mapped = [];
+  for (const p of packages) {
+    const avail = await getPackageAvailability(p);
+    mapped.push({
+      ...p,
+      id: String(p._id),
+      remainingSessions: avail.remainingSessions,
+      reservedSessions: avail.reservedSessions,
+      usedSessions: avail.usedSessions,
+      totalSessions: avail.totalSessions,
+      eventType: p.eventType
+        ? { ...p.eventType, id: String(p.eventType._id) }
+        : null,
+    });
+  }
 
   return NextResponse.json({ packages: mapped });
 }

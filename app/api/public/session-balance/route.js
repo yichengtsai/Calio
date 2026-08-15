@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import connectMongo from "@/libs/mongoose";
 import User from "@/models/User";
 import EventType from "@/models/EventType";
-import { findAvailablePackage, packageRemaining } from "@/libs/sessions";
+import { getStudentCourseBalance } from "@/libs/sessions";
 import { rateLimit, getClientIp } from "@/libs/rateLimit";
 
 export async function GET(req) {
@@ -48,23 +48,25 @@ export async function GET(req) {
       return NextResponse.json({
         requiresSessionPackage: false,
         remainingSessions: null,
+        reservedSessions: null,
       });
     }
 
-    const pkg = await findAvailablePackage({
+    const bal = await getStudentCourseBalance({
       organizerId: user._id,
       eventTypeId: eventType._id,
       inviteeEmail: email,
     });
 
-    const remaining = packageRemaining(pkg);
-
     return NextResponse.json({
       requiresSessionPackage: true,
-      remainingSessions: remaining,
-      hasPackage: Boolean(pkg),
-      inviteeName: pkg?.inviteeName || null,
-      packageId: pkg ? String(pkg._id) : null,
+      remainingSessions: bal.remainingSessions,
+      totalSessions: bal.totalSessions,
+      usedSessions: bal.usedSessions,
+      reservedSessions: bal.reservedSessions,
+      hasPackage: bal.hasPackage,
+      inviteeName: bal.inviteeName,
+      packageId: bal.packageId,
     });
   } catch (e) {
     console.error("GET session-balance", e);

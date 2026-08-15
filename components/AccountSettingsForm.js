@@ -525,6 +525,11 @@ export default function AccountSettingsForm() {
                 </button>
               )}
             </div>
+            <p className="text-xs text-base-content/50 mt-2 leading-relaxed">
+              Displayed as a <strong>circle</strong> on your booking page. Prefer a
+              square image, at least <strong>256×256 px</strong> (512×512 is ideal).
+              Avoid important text near the edges—it may be cropped.
+            </p>
             <p className="text-xs text-base-content/40 mt-2">
               Or paste an image URL instead:
             </p>

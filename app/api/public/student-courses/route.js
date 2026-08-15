@@ -3,13 +3,12 @@ import connectMongo from "@/libs/mongoose";
 import User from "@/models/User";
 import EventType from "@/models/EventType";
 import ClientPackage from "@/models/ClientPackage";
+import { getPackageAvailability } from "@/libs/sessions";
 import { rateLimit, getClientIp } from "@/libs/rateLimit";
 
 /**
  * GET /api/public/student-courses?username=&email=
- * 依 email 回傳該教練底下學員可預約的課程：
- * - 需堂數的課：有 active 方案且剩餘 > 0 才列出，並帶 remainingSessions
- * - 不需堂數的課：一律列出
+ * 可用堂數 = total - used - 已預約未扣（pending/confirmed）
  */
 export async function GET(req) {
   try {
@@ -56,30 +55,28 @@ export async function GET(req) {
       status: "active",
     }).lean();
 
-    // eventTypeId -> { remaining, total, inviteeName, packageId }
-    const packageByEventType = new Map();
+    // eventTypeId -> aggregated availability
+    const balanceByEventType = new Map();
     let inviteeName = null;
 
     for (const pkg of packages) {
-      const remaining = Math.max(
-        0,
-        (pkg.totalSessions || 0) - (pkg.usedSessions || 0)
-      );
-      if (remaining <= 0) continue;
-
+      const avail = await getPackageAvailability(pkg);
       const etId = String(pkg.eventType);
-      const prev = packageByEventType.get(etId);
-      if (!prev) {
-        packageByEventType.set(etId, {
-          remainingSessions: remaining,
-          totalSessions: pkg.totalSessions || 0,
-          packageId: String(pkg._id),
-        });
-      } else {
-        // 多筆方案時加總剩餘
-        prev.remainingSessions += remaining;
-        prev.totalSessions += pkg.totalSessions || 0;
+      const prev = balanceByEventType.get(etId) || {
+        remainingSessions: 0,
+        totalSessions: 0,
+        usedSessions: 0,
+        reservedSessions: 0,
+        packageId: null,
+      };
+      prev.remainingSessions += avail.remainingSessions;
+      prev.totalSessions += avail.totalSessions;
+      prev.usedSessions += avail.usedSessions;
+      prev.reservedSessions += avail.reservedSessions;
+      if (avail.remainingSessions > 0 && !prev.packageId) {
+        prev.packageId = String(pkg._id);
       }
+      balanceByEventType.set(etId, prev);
       if (pkg.inviteeName && !inviteeName) inviteeName = pkg.inviteeName;
     }
 
@@ -88,10 +85,9 @@ export async function GET(req) {
     for (const et of eventTypes) {
       const etId = String(et._id);
       const requiresPackage = Boolean(et.requiresSessionPackage);
-      const pkgInfo = packageByEventType.get(etId);
+      const bal = balanceByEventType.get(etId);
 
-      if (requiresPackage && !pkgInfo) {
-        // 需堂數但沒有剩餘 → 不顯示
+      if (requiresPackage && !(bal && bal.remainingSessions > 0)) {
         continue;
       }
 
@@ -106,11 +102,11 @@ export async function GET(req) {
         requiresSessionPackage: requiresPackage,
         price: et.price != null ? Number(et.price) : null,
         currency: et.currency || "TWD",
-        remainingSessions: requiresPackage
-          ? pkgInfo.remainingSessions
-          : null,
-        totalSessions: requiresPackage ? pkgInfo.totalSessions : null,
-        packageId: requiresPackage ? pkgInfo.packageId : null,
+        remainingSessions: requiresPackage ? bal.remainingSessions : null,
+        totalSessions: requiresPackage ? bal.totalSessions : null,
+        usedSessions: requiresPackage ? bal.usedSessions : null,
+        reservedSessions: requiresPackage ? bal.reservedSessions : null,
+        packageId: requiresPackage ? bal.packageId : null,
       });
     }
 
@@ -118,7 +114,7 @@ export async function GET(req) {
       email,
       inviteeName,
       courses,
-      hasAnyPackage: packageByEventType.size > 0,
+      hasAnyPackage: balanceByEventType.size > 0,
     });
   } catch (e) {
     console.error("GET student-courses", e);

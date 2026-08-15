@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import BookingWidget from "@/components/BookingWidget";
+import TimezoneSelect from "@/components/TimezoneSelect";
 
 function getLocationType(et) {
   const structured = et?.locationType;
@@ -76,6 +77,53 @@ function formatPrice(price, currency = "TWD") {
   }
 }
 
+function storageKey(username) {
+  return `calio-booking-identity:${username || ""}`;
+}
+
+function loadStoredIdentity(username) {
+  if (typeof window === "undefined" || !username) return null;
+  try {
+    const raw = localStorage.getItem(storageKey(username));
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (!data?.email) return null;
+    return {
+      email: String(data.email).trim().toLowerCase(),
+      name: data.name ? String(data.name).trim() : "",
+      timezone: data.timezone ? String(data.timezone) : "",
+    };
+  } catch {
+    return null;
+  }
+}
+
+function saveStoredIdentity(username, { email, name, timezone }) {
+  if (typeof window === "undefined" || !username || !email) return;
+  try {
+    const prev = loadStoredIdentity(username) || {};
+    localStorage.setItem(
+      storageKey(username),
+      JSON.stringify({
+        email: String(email).trim().toLowerCase(),
+        name: name ? String(name).trim() : prev.name || "",
+        timezone: timezone || prev.timezone || "",
+      })
+    );
+  } catch {
+    /* ignore */
+  }
+}
+
+function clearStoredIdentity(username) {
+  if (typeof window === "undefined" || !username) return;
+  try {
+    localStorage.removeItem(storageKey(username));
+  } catch {
+    /* ignore */
+  }
+}
+
 const LOCATION_META = {
   video: { icon: <VideoIcon />, label: "Video call" },
   phone: { icon: <PhoneIcon />, label: "Phone call" },
@@ -83,12 +131,8 @@ const LOCATION_META = {
 };
 
 /**
- * 預約流程：
- * 1. identify — 先填 email
- * 2. pick — 依 email 顯示可預約課程（剩餘堂數、價錢）
- * 3. book — 進入 BookingWidget 選時段
- *
- * 舊連結 ?event=slug 仍支援：有 email 時直接進該課；無 email 則 identify 後自動選該課。
+ * Flow: email → course list (must pick timezone before opening a course) → BookingWidget
+ * Email + timezone remembered in localStorage per coach username.
  */
 export default function EventTypePicker({
   username,
@@ -106,11 +150,14 @@ export default function EventTypePicker({
   const [phase, setPhase] = useState("identify"); // identify | pick | book
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
+  const [timezone, setTimezone] = useState("");
   const [courses, setCourses] = useState([]);
   const [selectedSlug, setSelectedSlug] = useState(null);
   const [isChecking, setIsChecking] = useState(false);
   const [error, setError] = useState(null);
   const [pendingSlug, setPendingSlug] = useState(initialSlug);
+  const [restored, setRestored] = useState(false);
+  const [tzHint, setTzHint] = useState(false);
 
   const widgetRef = useRef(null);
   const isFirstRender = useRef(true);
@@ -130,37 +177,53 @@ export default function EventTypePicker({
     }
   }, [phase, selected]);
 
-  async function handleIdentify(e) {
-    e.preventDefault();
+  async function lookupCourses(nextEmail, nextName, { remember = true } = {}) {
+    const em = String(nextEmail || "").trim().toLowerCase();
+    if (!em) return;
     setError(null);
     setIsChecking(true);
     try {
       const res = await fetch(
         `/api/public/student-courses?username=${encodeURIComponent(
           username
-        )}&email=${encodeURIComponent(email.trim())}`
+        )}&email=${encodeURIComponent(em)}`
       );
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || "Could not look up courses");
         return;
       }
-      if (data.inviteeName && !name) setName(data.inviteeName);
+      const resolvedName = data.inviteeName || nextName || "";
+      if (resolvedName) setName(resolvedName);
+      setEmail(em);
 
       const list = data.courses || [];
       setCourses(list);
 
-      // 舊連結指定某一課：若該課在可約列表中，直接進入
+      if (remember) {
+        saveStoredIdentity(username, {
+          email: em,
+          name: resolvedName,
+          timezone,
+        });
+      }
+
       const want = pendingSlug;
       if (want && list.some((c) => c.slug === want)) {
-        setSelectedSlug(want);
-        setPhase("book");
+        // Still need timezone before auto-opening
+        if (timezone) {
+          setSelectedSlug(want);
+          setPhase("book");
+          return;
+        }
+        setPhase("pick");
+        setTzHint(true);
         return;
       }
 
       if (list.length === 0) {
         setError(
-          "No bookable courses for this email. Please contact the host to activate a session package, or check the email address."
+          "No bookable courses for this email. Check that it matches the address used for your session package, or contact the host."
         );
         setPhase("pick");
         return;
@@ -174,7 +237,50 @@ export default function EventTypePicker({
     }
   }
 
+  // Restore email + timezone after refresh
+  useEffect(() => {
+    if (restored) return;
+    const stored = loadStoredIdentity(username);
+    setRestored(true);
+    if (stored?.timezone) setTimezone(stored.timezone);
+    if (!stored?.email) {
+      // Suggest browser timezone as default selection value only after identify
+      return;
+    }
+    setEmail(stored.email);
+    if (stored.name) setName(stored.name);
+    lookupCourses(stored.email, stored.name, { remember: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [username, restored]);
+
+  async function handleIdentify(e) {
+    e.preventDefault();
+    // Default timezone to browser if not set yet (user can change on next step)
+    if (!timezone) {
+      try {
+        const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (browserTz) setTimezone(browserTz);
+      } catch {
+        /* ignore */
+      }
+    }
+    await lookupCourses(email, name, { remember: true });
+  }
+
+  function handleTimezoneChange(tz) {
+    setTimezone(tz);
+    setTzHint(false);
+    if (email) {
+      saveStoredIdentity(username, { email, name, timezone: tz });
+    }
+  }
+
   function handleSelectCourse(slug) {
+    if (!timezone) {
+      setTzHint(true);
+      return;
+    }
+    saveStoredIdentity(username, { email, name, timezone });
     setSelectedSlug(slug);
     setPhase("book");
   }
@@ -189,6 +295,9 @@ export default function EventTypePicker({
     setCourses([]);
     setError(null);
     setPendingSlug(null);
+    setTzHint(false);
+    clearStoredIdentity(username);
+    setTimezone("");
     setPhase("identify");
   }
 
@@ -199,9 +308,10 @@ export default function EventTypePicker({
         <div className="h-1.5" style={{ backgroundColor: brandColor }} />
         <form onSubmit={handleIdentify} className="p-6 sm:p-8 space-y-5">
           <div className="text-center space-y-1">
-            <h2 className="text-lg font-bold">請先輸入 Email 才能預約</h2>
+            <h2 className="text-lg font-bold">Enter your email to book</h2>
             <p className="text-sm text-base-content/60">
-              輸入學員 Email 後，才會顯示你可預約的課程、剩餘堂數與費用。
+              We&apos;ll show courses available for you, remaining sessions, and
+              pricing.
             </p>
           </div>
 
@@ -222,7 +332,8 @@ export default function EventTypePicker({
 
           <div>
             <label className="block text-sm font-medium text-base-content/80 mb-1">
-              Name <span className="text-base-content/40 font-normal">(optional)</span>
+              Name{" "}
+              <span className="text-base-content/40 font-normal">(optional)</span>
             </label>
             <input
               type="text"
@@ -242,7 +353,7 @@ export default function EventTypePicker({
             style={{ backgroundColor: brandColor, borderColor: brandColor }}
             className="btn w-full text-white border-0"
           >
-            {isChecking ? "查詢中…" : "繼續查看可預約課程"}
+            {isChecking ? "Checking…" : "Continue"}
           </button>
         </form>
       </div>
@@ -272,7 +383,7 @@ export default function EventTypePicker({
         </div>
 
         <BookingWidget
-          key={selected.slug}
+          key={`${selected.slug}-${timezone}`}
           username={username}
           slug={selected.slug}
           organizerName={organizerName}
@@ -281,17 +392,20 @@ export default function EventTypePicker({
           eventType={selected}
           initialEmail={email}
           initialName={name}
+          initialTimezone={timezone}
           initialRemainingSessions={
             selected.requiresSessionPackage ? selected.remainingSessions : null
           }
+          onTimezoneChange={handleTimezoneChange}
         />
       </div>
     );
   }
 
-  // —— Step 2: course list ——
+  // —— Step 2: timezone + course list ——
   const packageCourses = courses.filter((c) => c.requiresSessionPackage);
   const openCourses = courses.filter((c) => !c.requiresSessionPackage);
+  const canOpenCourse = Boolean(timezone);
 
   function CourseCard({ et }) {
     const locationType = getLocationType(et);
@@ -303,7 +417,12 @@ export default function EventTypePicker({
       <button
         type="button"
         onClick={() => handleSelectCourse(et.slug)}
-        className="group block w-full text-left rounded-xl border border-base-300 bg-base-100 p-5 transition-all hover:border-[var(--brand-color)] hover:shadow-md active:scale-[0.99]"
+        disabled={!canOpenCourse}
+        className={`group block w-full text-left rounded-xl border border-base-300 bg-base-100 p-5 transition-all ${
+          canOpenCourse
+            ? "hover:border-[var(--brand-color)] hover:shadow-md active:scale-[0.99]"
+            : "opacity-50 cursor-not-allowed"
+        }`}
         style={{ "--brand-color": et.color || brandColor }}
       >
         <div className="flex items-start justify-between gap-3 mb-2">
@@ -315,18 +434,16 @@ export default function EventTypePicker({
             <p className="font-semibold truncate">{et.title}</p>
           </div>
           {isPackage ? (
-            <span className="shrink-0 badge badge-success badge-sm gap-1">
-              堂數方案
-            </span>
+            <span className="shrink-0 badge badge-success badge-sm">Package</span>
           ) : (
-            <span className="shrink-0 badge badge-ghost badge-sm">開放預約</span>
+            <span className="shrink-0 badge badge-ghost badge-sm">Open</span>
           )}
         </div>
 
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-base-content/50 mb-2">
           <span className="flex items-center gap-1">
             <ClockIcon />
-            {et.duration} 分鐘
+            {et.duration} min
           </span>
           {meta && (
             <span className="flex items-center gap-1">
@@ -337,21 +454,26 @@ export default function EventTypePicker({
         </div>
 
         {et.description && (
-          <p className="text-sm text-base-content/60 leading-relaxed mb-3 line-clamp-2">
-            {et.description}
-          </p>
+          <div className="mb-3 rounded-lg bg-base-200/60 px-3 py-2">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-base-content/40 mb-0.5">
+              About this session
+            </p>
+            <p className="text-sm text-base-content/70 leading-relaxed whitespace-pre-line line-clamp-4">
+              {et.description}
+            </p>
+          </div>
         )}
 
-        {/* 方案課：剩餘堂數 + 費用 */}
         {isPackage && (
           <div className="rounded-lg bg-success/10 border border-success/20 px-3 py-2.5 space-y-1 mb-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-sm font-semibold text-success">
-                剩餘 {et.remainingSessions ?? 0} 堂
+                {et.remainingSessions ?? 0} session
+                {(et.remainingSessions ?? 0) === 1 ? "" : "s"} available
                 {et.totalSessions != null ? (
                   <span className="font-normal text-success/70">
                     {" "}
-                    / 共 {et.totalSessions} 堂
+                    / {et.totalSessions} total
                   </span>
                 ) : null}
               </span>
@@ -360,24 +482,32 @@ export default function EventTypePicker({
                   {priceLabel}
                   <span className="text-xs font-normal text-base-content/50">
                     {" "}
-                    / 堂參考價
+                    ref.
                   </span>
                 </span>
               )}
             </div>
+            {(et.reservedSessions > 0 || et.usedSessions > 0) && (
+              <p className="text-xs text-success/80">
+                {et.reservedSessions > 0
+                  ? `${et.reservedSessions} already booked (not yet completed)`
+                  : null}
+                {et.reservedSessions > 0 && et.usedSessions > 0 ? " · " : ""}
+                {et.usedSessions > 0 ? `${et.usedSessions} completed` : null}
+              </p>
+            )}
             <p className="text-xs text-base-content/55 leading-relaxed">
-              此課程已綁定你的堂數方案。點選後選擇時段即可預約，上課後會扣除 1
-              堂。
+              Linked to your session package. Available count excludes upcoming
+              bookings. One session is deducted after the class starts.
             </p>
           </div>
         )}
 
-        {/* 開放課：操作說明 */}
         {!isPackage && (
           <div className="rounded-lg bg-base-200/80 border border-base-300 px-3 py-2.5 space-y-1 mb-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs font-medium text-base-content/70">
-                無需堂數，可直接預約
+                No package required — book directly
               </span>
               {priceLabel && (
                 <span className="text-sm font-bold text-base-content">
@@ -386,13 +516,18 @@ export default function EventTypePicker({
               )}
             </div>
             <p className="text-xs text-base-content/55 leading-relaxed">
-              點選此課程 → 選擇日期與時段 → 確認資料送出。若需付費或審核，教練會再與你聯繫。
+              Pick a time → confirm your details. Payment or approval (if any)
+              will be handled by the host.
             </p>
           </div>
         )}
 
-        <p className="text-xs font-medium text-primary group-hover:underline">
-          點此選擇時段 →
+        <p
+          className={`text-xs font-medium ${
+            canOpenCourse ? "text-primary group-hover:underline" : "text-base-content/40"
+          }`}
+        >
+          {canOpenCourse ? "Select a time →" : "Select your timezone first"}
         </p>
       </button>
     );
@@ -402,9 +537,9 @@ export default function EventTypePicker({
     <div className="rounded-2xl bg-base-200/40 p-5 sm:p-6 space-y-5 animate-opacity">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         <div className="space-y-0.5">
-          <h2 className="text-lg font-bold">你可預約的課程</h2>
+          <h2 className="text-lg font-bold">Your available courses</h2>
           <p className="text-xs text-base-content/45">
-            目前身分：
+            Signed in as{" "}
             <span className="font-medium text-base-content/70">{email}</span>
             {name ? ` · ${name}` : ""}
           </p>
@@ -414,17 +549,43 @@ export default function EventTypePicker({
           onClick={handleChangeEmail}
           className="btn btn-ghost btn-xs self-start"
         >
-          更換 Email
+          Change email
         </button>
       </div>
 
-      {/* 總操作說明 */}
+      {/* Timezone required before opening a course */}
+      <div
+        className={`rounded-xl border px-4 py-3 space-y-2 ${
+          tzHint || !timezone
+            ? "border-warning/50 bg-warning/5"
+            : "border-base-300 bg-base-100"
+        }`}
+      >
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <p className="text-sm font-semibold text-base-content">
+              Your timezone <span className="text-error">*</span>
+            </p>
+            <p className="text-xs text-base-content/50 mt-0.5">
+              Required before you can open a course. Times will be shown in this
+              timezone. Your choice is remembered on this device.
+            </p>
+          </div>
+        </div>
+        <TimezoneSelect value={timezone || null} onChange={handleTimezoneChange} />
+        {(tzHint || !timezone) && (
+          <p className="text-xs text-warning font-medium">
+            Please select a timezone to continue.
+          </p>
+        )}
+      </div>
+
       <div className="rounded-xl border border-base-300 bg-base-100 px-4 py-3 text-sm text-base-content/70 space-y-1">
-        <p className="font-medium text-base-content">如何預約？</p>
+        <p className="font-medium text-base-content">How to book</p>
         <ol className="list-decimal list-inside text-xs space-y-0.5 text-base-content/55">
-          <li>下方分為「堂數方案課程」與「開放預約課程」</li>
-          <li>點選你要的課程</li>
-          <li>在日曆上選擇日期與時段並送出</li>
+          <li>Confirm your timezone above</li>
+          <li>Choose a package course or an open course</li>
+          <li>Pick a date and time, then submit</li>
         </ol>
       </div>
 
@@ -433,10 +594,11 @@ export default function EventTypePicker({
       {courses.length === 0 ? (
         <div className="text-center py-8 space-y-2">
           <p className="text-base-content/50 text-sm">
-            這個 Email 目前沒有可預約的課程。
+            No bookable courses for this email.
           </p>
           <p className="text-xs text-base-content/40">
-            若你已購買堂數，請確認 Email 是否正確，或聯絡教練為你開通方案。
+            If you purchased sessions, confirm the email matches, or ask the host
+            to activate a package.
           </p>
         </div>
       ) : (
@@ -446,10 +608,10 @@ export default function EventTypePicker({
               <div>
                 <h3 className="text-sm font-bold flex items-center gap-2">
                   <span className="w-1.5 h-1.5 rounded-full bg-success" />
-                  堂數方案課程
+                  Package courses
                 </h3>
                 <p className="text-xs text-base-content/45 mt-0.5">
-                  已為你開通的課程，會顯示剩餘堂數；預約並完成上課後扣除 1 堂。
+                  Courses linked to your session package, with remaining count.
                 </p>
               </div>
               <div className="space-y-3">
@@ -465,10 +627,10 @@ export default function EventTypePicker({
               <div>
                 <h3 className="text-sm font-bold flex items-center gap-2">
                   <span className="w-1.5 h-1.5 rounded-full bg-base-content/30" />
-                  開放預約課程
+                  Open courses
                 </h3>
                 <p className="text-xs text-base-content/45 mt-0.5">
-                  不需堂數方案，任何人填完資料即可申請時段。
+                  No package required — anyone can request a time.
                 </p>
               </div>
               <div className="space-y-3">

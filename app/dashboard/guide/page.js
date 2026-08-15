@@ -26,42 +26,42 @@ const HOW_IT_WORKS = [
     name: "Set your availability",
     href: "/dashboard/availability",
     description:
-      "Go to Availability, toggle on the days you're open, and set a time range for each. This decides which hours people can even see as options.",
+      "Turn on the days you’re open and set hours for each. Clients only see times inside these windows (plus your buffer and notice rules).",
   },
   {
     step: "2",
-    name: "Create an event type",
+    name: "Create courses (event types)",
     href: "/dashboard/event-types",
     description:
-      "Go to Event Types → \"+ New\". Give it a name, a duration, and choose whether bookings need your approval or confirm instantly.",
+      "Add a course with name, duration, optional price, and a short description (teaching focus). Enable “requires session package” for package-based courses.",
   },
   {
     step: "3",
-    name: "Share your booking page",
-    href: "/dashboard/settings",
+    name: "Activate session packages",
+    href: "/dashboard/packages",
     description:
-      "In Settings, pick a username. That gives you a link like yoursite.com/you — send that to anyone you want to book time with you.",
+      "Pick a course, enter each client’s email (and name), and set how many sessions they get. Remaining sessions are enforced when they book.",
   },
   {
     step: "4",
-    name: "Review requests as they come in",
-    href: "/dashboard/bookings",
+    name: "Set your public link & branding",
+    href: "/dashboard/settings",
     description:
-      "New requests land in Bookings → Pending. Approve or decline each one — approving sends a confirmation, declining lets them know politely.",
+      "Choose a username for your booking URL. Optionally upload a logo (shown as a circle) and brand color for the public page.",
   },
   {
     step: "5",
-    name: "See everything in one place",
-    href: "/dashboard",
+    name: "Share the link with clients",
+    href: "/dashboard/settings",
     description:
-      "Your Calendar (the homepage) shows bookings, events you've created, and personal time blocks together. Click anything on it for details, and switch between Day / Week / Month / Year up top.",
+      "Clients open your page → enter email → select timezone → see package courses they can still book (and open courses) → pick a time.",
   },
   {
     step: "6",
-    name: "Add your own meetings too",
-    href: "/dashboard/events",
+    name: "Manage bookings on the calendar",
+    href: "/dashboard",
     description:
-      "Team Events is for when you want to set up a meeting yourself and invite people directly by email, instead of waiting for them to book.",
+      "Approve pending requests if needed, reschedule or cancel, and track the day. Sessions deduct after the class start time passes without cancellation.",
   },
 ];
 
