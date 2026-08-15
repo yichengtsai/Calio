@@ -48,6 +48,13 @@ const bookingSchema = new mongoose.Schema(
     googleEventId: { type: String },
     // Google Meet 連結（建立會議時寫入，確認信與日曆詳情用）
     meetingUrl: { type: String },
+    // 堂數方案（需堂數的活動才會寫）
+    sessionPackage: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "ClientPackage",
+    },
+    // 開始時間到且未取消後扣堂的時間；有值表示已扣過
+    sessionDeductedAt: { type: Date },
   },
   { timestamps: true, toJSON: { virtuals: true } }
 );

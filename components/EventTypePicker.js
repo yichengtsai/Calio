@@ -105,6 +105,7 @@ export default function EventTypePicker({ username, eventTypes, organizerName, o
         </button>
 
         <BookingWidget
+          key={selected.slug}
           username={username}
           slug={selected.slug}
           organizerName={organizerName}

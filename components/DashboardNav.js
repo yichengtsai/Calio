@@ -10,6 +10,7 @@ const SECTIONS = [
     items: [
       { name: "Calendar", href: "/dashboard", match: (p, tab) => p === "/dashboard" },
       { name: "Insights", href: "/dashboard/insights" },
+      { name: "Packages", href: "/dashboard/packages" },
     ],
   },
   {

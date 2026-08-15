@@ -55,6 +55,7 @@ export async function PATCH(req, { params }) {
     color,
     isActive,
     requiresApproval,
+    requiresSessionPackage,
     bufferMinutes,
     slotIntervalMinutes,
     minimumNoticeMinutes,
@@ -92,6 +93,8 @@ export async function PATCH(req, { params }) {
   if (color !== undefined) eventType.color = color;
   if (isActive !== undefined) eventType.isActive = isActive;
   if (requiresApproval !== undefined) eventType.requiresApproval = requiresApproval;
+  if (requiresSessionPackage !== undefined)
+    eventType.requiresSessionPackage = Boolean(requiresSessionPackage);
   if (bufferMinutes !== undefined) {
     eventType.bufferMinutes = Math.max(0, Number(bufferMinutes) || 0);
   }

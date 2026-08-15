@@ -27,6 +27,8 @@ const eventTypeSchema = new mongoose.Schema(
     color: { type: String, default: "#6366f1" },
     isActive: { type: Boolean, default: true },
     requiresApproval: { type: Boolean, default: true },
+    // 需堂數：預約前查方案，上課時間到且未取消才扣 1 堂
+    requiresSessionPackage: { type: Boolean, default: false },
     bufferMinutes: { type: Number, default: 0, min: 0 },
     slotIntervalMinutes: { type: Number, default: 0, min: 0 },
     minimumNoticeMinutes: { type: Number, default: 0, min: 0 },

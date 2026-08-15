@@ -168,7 +168,17 @@ export default function BookingWidget({
   const [rawSlotsByDate, setRawSlotsByDate] = useState(new Map());
   const [isLoadingCalendar, setIsLoadingCalendar] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState(null);
-  const [step, setStep] = useState("select-time"); // select-time | details | success
+  const needsPackage = Boolean(eventType?.requiresSessionPackage);
+  const [step, setStep] = useState(needsPackage ? "identify" : "select-time"); // identify | select-time | details | success
+  const [remainingSessions, setRemainingSessions] = useState(null);
+  const [isCheckingPackage, setIsCheckingPackage] = useState(false);
+
+  // 需堂數的課程：一定要先通過 email 驗證，不能直接選時段
+  useEffect(() => {
+    if (needsPackage && remainingSessions == null && step === "select-time") {
+      setStep("identify");
+    }
+  }, [needsPackage]); // eslint-disable-line react-hooks/exhaustive-deps
   // 預約成功後,後端回傳的 booking 會帶 id + cancelToken(跟確認信裡取消連結用的是同一組),
   // 存起來才能在完成畫面上直接顯示取消連結,不用讓客戶只能從信箱裡找
   const [confirmedBooking, setConfirmedBooking] = useState(null);
@@ -312,6 +322,37 @@ export default function BookingWidget({
 
   const slots = selectedDateSlots || [];
   const isLoadingSlots = !!selectedDate && selectedDateSlots === null;
+
+
+  async function handleIdentify(e) {
+    e.preventDefault();
+    setError(null);
+    setIsCheckingPackage(true);
+    try {
+      const res = await fetch(
+        `/api/public/session-balance?username=${encodeURIComponent(username)}&slug=${encodeURIComponent(slug)}&email=${encodeURIComponent(email.trim())}`
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Could not verify sessions");
+        return;
+      }
+      if (!data.hasPackage || !(data.remainingSessions > 0)) {
+        setError(
+          "No remaining sessions for this course. Please contact the host to activate a package."
+        );
+        setRemainingSessions(0);
+        return;
+      }
+      setRemainingSessions(data.remainingSessions);
+      if (data.inviteeName && !name) setName(data.inviteeName);
+      setStep("select-time");
+    } catch {
+      setError("Something went wrong. Please try again.");
+    } finally {
+      setIsCheckingPackage(false);
+    }
+  }
 
   async function handleConfirm(e) {
     e.preventDefault();
@@ -498,8 +539,52 @@ export default function BookingWidget({
         </div>
       </div>
 
+      
+      {step === "identify" && (
+        <form onSubmit={handleIdentify} className="p-6 space-y-4">
+          <p className="text-sm text-base-content/70">
+            Enter your email to check remaining sessions for this course.
+          </p>
+          <div>
+            <label className="block text-sm font-medium text-base-content/80 mb-1">Email</label>
+            <input
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="input input-bordered w-full"
+              placeholder="you@example.com"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-base-content/80 mb-1">Name (optional)</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="input input-bordered w-full"
+            />
+          </div>
+          {error && <p className="text-sm text-error">{error}</p>}
+          <button
+            type="submit"
+            disabled={isCheckingPackage}
+            style={{ backgroundColor: brandColor, borderColor: brandColor }}
+            className="btn w-full text-white"
+          >
+            {isCheckingPackage ? "Checking…" : "Continue"}
+          </button>
+        </form>
+      )}
+
       {step === "select-time" && (
+
         <div key="select-time" className="p-6 space-y-5 animate-opacity">
+        {remainingSessions != null && (
+          <div className="mx-6 mt-4 rounded-lg bg-success/10 border border-success/30 px-3 py-2 text-sm text-success">
+            Remaining sessions for this course: <strong>{remainingSessions}</strong>
+          </div>
+        )}
           {/* 預約人自己選時區:所有日期、時段都會依這裡自動換算顯示 */}
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wide text-base-content/40 mb-1.5">
@@ -678,6 +763,11 @@ export default function BookingWidget({
             />
           </div>
 
+          {remainingSessions != null && (
+            <p className="text-sm text-success font-medium">
+              Remaining sessions: {remainingSessions}
+            </p>
+          )}
           <div>
             <label className="block text-sm font-medium text-base-content/80 mb-1">Email</label>
             <input
@@ -686,6 +776,7 @@ export default function BookingWidget({
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="input input-bordered w-full"
+              readOnly={Boolean(eventType?.requiresSessionPackage && remainingSessions != null)}
             />
           </div>
 

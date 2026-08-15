@@ -8,6 +8,54 @@ import { rateLimit, getClientIp } from "@/libs/rateLimit";
 import { deleteGoogleCalendarEvent } from "@/libs/googleCalendar";
 import { canUseGoogleCalendarSync } from "@/libs/plans";
 
+function cancellationDeadline(startTime, noticeMins) {
+  const startMs =
+    startTime instanceof Date
+      ? startTime.getTime()
+      : new Date(startTime).getTime();
+  if (!Number.isFinite(startMs)) return null;
+  const notice = Math.max(0, Number(noticeMins) || 0);
+  // notice=0 → 截止 = 開始當下（開始後就不能取消）
+  return new Date(startMs - notice * 60 * 1000);
+}
+
+function canCancelBooking(booking) {
+  if (!booking) return { ok: false, error: "Booking not found" };
+  if (booking.status === "cancelled") {
+    return { ok: false, error: "This booking is already cancelled.", already: true };
+  }
+  if (
+    booking.status === "declined" ||
+    booking.status === "expired"
+  ) {
+    return {
+      ok: false,
+      error: "This booking can no longer be cancelled.",
+    };
+  }
+
+  const noticeMins =
+    Number(booking.eventType?.minimumNoticeMinutes) || 0;
+  const deadline = cancellationDeadline(booking.startTime, noticeMins);
+  if (!deadline) {
+    return { ok: false, error: "Invalid booking time." };
+  }
+
+  if (Date.now() > deadline.getTime()) {
+    return {
+      ok: false,
+      error:
+        noticeMins > 0
+          ? "This booking can no longer be cancelled — the cancellation deadline has passed."
+          : "This booking has already started and can no longer be cancelled.",
+      deadline: deadline.toISOString(),
+      noticeMins,
+    };
+  }
+
+  return { ok: true, deadline: deadline.toISOString(), noticeMins };
+}
+
 export async function POST(req, { params }) {
   try {
     const ip = getClientIp(req);
@@ -24,38 +72,30 @@ export async function POST(req, { params }) {
     const { token } = body;
 
     if (!token) {
-      return NextResponse.json({ error: "Missing cancellation token" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Missing cancellation token" },
+        { status: 400 }
+      );
     }
 
     await connectMongo();
 
-    // token 要完全對上,不然任何人猜到 booking id 就能取消別人的預約
-    const booking = await Booking.findOne({ _id: id, cancelToken: token }).populate(
-      "eventType",
-      "title minimumNoticeMinutes"
-    );
+    const booking = await Booking.findOne({
+      _id: id,
+      cancelToken: token,
+    }).populate("eventType", "title minimumNoticeMinutes");
 
     if (!booking) {
       return NextResponse.json({ error: "Booking not found" }, { status: 404 });
     }
 
     if (booking.status === "cancelled") {
-      return NextResponse.json({ booking }); // 已經取消過了,直接回傳現況
+      return NextResponse.json({ booking });
     }
 
-    // 取消截止時間 = EventType.minimumNoticeMinutes（與最短提前預約同一欄）
-    const noticeMins = booking.eventType?.minimumNoticeMinutes || 0;
-    if (noticeMins > 0) {
-      const deadline = new Date(booking.startTime.getTime() - noticeMins * 60 * 1000);
-      if (Date.now() > deadline.getTime()) {
-        return NextResponse.json(
-          {
-            error:
-              "This booking can no longer be cancelled — the cancellation deadline has passed.",
-          },
-          { status: 400 }
-        );
-      }
+    const check = canCancelBooking(booking);
+    if (!check.ok) {
+      return NextResponse.json({ error: check.error }, { status: 400 });
     }
 
     booking.status = "cancelled";
@@ -65,8 +105,6 @@ export async function POST(req, { params }) {
 
     const organizer = await User.findById(booking.organizer);
 
-    // 如果這筆之前已經同步進主辦人的 Google Calendar,取消時要一併刪掉,不然主辦人的行事曆上
-    // 會留著一筆「其實已經取消了」的幽靈行程。
     if (booking.googleEventId && canUseGoogleCalendarSync(organizer)) {
       await deleteGoogleCalendarEvent(booking.organizer, booking.googleEventId);
     }
@@ -84,7 +122,9 @@ export async function POST(req, { params }) {
           inviteeName: booking.inviteeName,
         }),
       })
-      .catch((e) => console.error("Failed to notify organizer of cancellation:", e.message));
+      .catch((e) =>
+        console.error("Failed to notify organizer of cancellation:", e.message)
+      );
 
     return NextResponse.json({ booking });
   } catch (e) {
@@ -97,26 +137,30 @@ export async function POST(req, { params }) {
 }
 
 export async function GET(req, { params }) {
-  // 給取消頁面載入時先顯示行程資訊用,一樣要帶正確的 token 才看得到
   try {
     const { id } = await params;
     const { searchParams } = new URL(req.url);
     const token = searchParams.get("token");
 
     if (!token) {
-      return NextResponse.json({ error: "Missing cancellation token" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Missing cancellation token" },
+        { status: 400 }
+      );
     }
 
     await connectMongo();
 
-    const booking = await Booking.findOne({ _id: id, cancelToken: token }).populate(
-      "eventType",
-      "title duration location"
-    );
+    const booking = await Booking.findOne({
+      _id: id,
+      cancelToken: token,
+    }).populate("eventType", "title duration location minimumNoticeMinutes");
 
     if (!booking) {
       return NextResponse.json({ error: "Booking not found" }, { status: 404 });
     }
+
+    const check = canCancelBooking(booking);
 
     return NextResponse.json({
       booking: {
@@ -127,6 +171,10 @@ export async function GET(req, { params }) {
         status: booking.status,
         inviteeName: booking.inviteeName,
       },
+      canCancel: check.ok,
+      cancelDeadline: check.deadline || null,
+      minimumNoticeMinutes: check.noticeMins ?? 0,
+      cancelBlockedReason: check.ok ? null : check.error,
     });
   } catch (e) {
     console.error("GET /api/public/bookings/[id]/cancel error:", e);

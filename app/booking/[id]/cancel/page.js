@@ -9,6 +9,8 @@ function CancelInner({ id }) {
 
   const [booking, setBooking] = useState(null);
   const [error, setError] = useState(null);
+  const [canCancel, setCanCancel] = useState(true);
+  const [blockedReason, setBlockedReason] = useState(null);
   const [isCancelling, setIsCancelling] = useState(false);
   const [done, setDone] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -34,6 +36,10 @@ function CancelInner({ id }) {
           return;
         }
         setBooking(data.booking);
+        if (data.canCancel === false) {
+          setCanCancel(false);
+          setBlockedReason(data.cancelBlockedReason || "This booking can no longer be cancelled.");
+        }
       })
       .catch((e) => {
         if (e.name === "AbortError") {
@@ -56,6 +62,7 @@ function CancelInner({ id }) {
   }, [id, token]);
 
   async function handleCancel() {
+    if (!canCancel) return;
     setIsCancelling(true);
     setError(null);
     try {
@@ -136,10 +143,15 @@ function CancelInner({ id }) {
             <p className="text-sm text-center text-base-content/70">
               Cancel this booking, {booking.inviteeName}?
             </p>
+            {!canCancel && blockedReason && (
+              <div className="rounded-lg border border-error/30 bg-error/10 px-3 py-2 text-sm text-error mb-3">
+                {blockedReason}
+              </div>
+            )}
             <button
               type="button"
               onClick={handleCancel}
-              disabled={isCancelling}
+              disabled={isCancelling || !canCancel}
               className="btn btn-error btn-sm w-full"
             >
               {isCancelling ? "Cancelling…" : "Yes, cancel this booking"}

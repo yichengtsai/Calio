@@ -40,6 +40,29 @@ export async function GET(req, { params }) {
       return NextResponse.json({ error: "Booking not found" }, { status: 404 });
     }
 
+    if (booking.status === "cancelled" || booking.status === "declined") {
+      return NextResponse.json(
+        { error: "This booking can no longer be rescheduled" },
+        { status: 400 }
+      );
+    }
+
+    const getNoticeMins = booking.eventType?.minimumNoticeMinutes || 0;
+    if (getNoticeMins > 0) {
+      const deadline = new Date(
+        booking.startTime.getTime() - getNoticeMins * 60 * 1000
+      );
+      if (Date.now() > deadline.getTime()) {
+        return NextResponse.json(
+          {
+            error:
+              "This booking can no longer be rescheduled — the deadline has passed.",
+          },
+          { status: 400 }
+        );
+      }
+    }
+
     const organizer = await User.findById(booking.organizer).select(
       "name email username timezone"
     );
@@ -122,6 +145,23 @@ export async function POST(req, { params }) {
         { error: "This booking cannot be rescheduled" },
         { status: 400 }
       );
+    }
+
+    // 與取消相同：超過「開始前 minimumNotice」就不能再改期
+    const rescheduleNoticeMins = booking.eventType?.minimumNoticeMinutes || 0;
+    if (rescheduleNoticeMins > 0) {
+      const deadline = new Date(
+        booking.startTime.getTime() - rescheduleNoticeMins * 60 * 1000
+      );
+      if (Date.now() > deadline.getTime()) {
+        return NextResponse.json(
+          {
+            error:
+              "This booking can no longer be rescheduled — the deadline has passed.",
+          },
+          { status: 400 }
+        );
+      }
     }
 
     const duration = booking.eventType?.duration || 30;

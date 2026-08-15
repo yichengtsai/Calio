@@ -15,6 +15,7 @@ import {
 import { checkCalendarConflict, pushEventToGoogleCalendar } from "@/libs/googleCalendar";
 import { canUseGoogleCalendarSync } from "@/libs/plans";
 import { findInternalConflicts, conflictErrorMessage } from "@/libs/conflicts";
+import { findAvailablePackage } from "@/libs/sessions";
 
 export async function POST(req) {
   try {
@@ -149,6 +150,28 @@ export async function POST(req) {
       }
     }
 
+    
+    // 需堂數：必須有剩餘方案
+    let sessionPackageId = undefined;
+    if (eventType.requiresSessionPackage) {
+      const pkg = await findAvailablePackage({
+        organizerId: user._id,
+        eventTypeId: eventType._id,
+        inviteeEmail,
+      });
+      if (!pkg) {
+        return NextResponse.json(
+          {
+            error:
+              "No remaining sessions for this course. Please contact the host to activate a package.",
+            code: "no_session_package",
+          },
+          { status: 403 }
+        );
+      }
+      sessionPackageId = pkg._id;
+    }
+
     const booking = await Booking.create({
       eventType: eventType._id,
       organizer: user._id,
@@ -159,6 +182,7 @@ export async function POST(req) {
       startTime: start,
       endTime: end,
       status: eventType.requiresApproval ? "pending" : "confirmed",
+      sessionPackage: sessionPackageId,
     });
 
     const timezone = user.timezone || "Asia/Taipei";

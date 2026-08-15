@@ -40,6 +40,7 @@ export default function EventTypeForm({ eventTypeId }) {
   const [locationType, setLocationType] = useState("custom");
   const [color, setColor] = useState(COLOR_PRESETS[0]);
   const [requiresApproval, setRequiresApproval] = useState(true);
+  const [requiresSessionPackage, setRequiresSessionPackage] = useState(false);
   const [bufferMinutes, setBufferMinutes] = useState(0);
   const [slotIntervalMinutes, setSlotIntervalMinutes] = useState(0); // 0 = same as duration
   const [minimumNoticeHours, setMinimumNoticeHours] = useState(0);
@@ -73,6 +74,7 @@ export default function EventTypeForm({ eventTypeId }) {
         );
         setColor(et.color || COLOR_PRESETS[0]);
         setRequiresApproval(et.requiresApproval !== false);
+        setRequiresSessionPackage(Boolean(et.requiresSessionPackage));
         setBufferMinutes(et.bufferMinutes || 0);
         setSlotIntervalMinutes(Number(et.slotIntervalMinutes) || 0);
         setMinimumNoticeHours((et.minimumNoticeMinutes || 0) / 60);
@@ -110,6 +112,7 @@ export default function EventTypeForm({ eventTypeId }) {
             locationType,
             color,
             requiresApproval,
+            requiresSessionPackage,
             bufferMinutes,
             slotIntervalMinutes: Number(slotIntervalMinutes) || 0,
             minimumNoticeMinutes: minimumNoticeHours * 60,
@@ -230,6 +233,24 @@ export default function EventTypeForm({ eventTypeId }) {
           </button>
         </div>
       </div>
+      
+      <div className="form-control">
+        <label className="label cursor-pointer justify-start gap-3">
+          <input
+            type="checkbox"
+            className="checkbox checkbox-sm"
+            checked={requiresSessionPackage}
+            onChange={(e) => setRequiresSessionPackage(e.target.checked)}
+          />
+          <span className="label-text">
+            Require session package (fixed class count)
+          </span>
+        </label>
+        <p className="text-xs text-base-content/50 mt-1 ml-8">
+          Guests must have remaining sessions for this course. A session is deducted when the start time passes without cancellation.
+        </p>
+      </div>
+
       <details className="rounded-lg border border-base-300 px-4 py-3" open>
         <summary className="text-sm font-medium cursor-pointer select-none">Availability rules</summary>
         <div className="mt-4 space-y-4">
