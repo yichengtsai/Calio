@@ -26,11 +26,6 @@ export default function AccountSettingsForm() {
   const [copied, setCopied] = useState(false);
   const [origin, setOrigin] = useState("");
   const [plan, setPlan] = useState(null);
-  const [calendars, setCalendars] = useState([]);
-  const [selectedCalendarIds, setSelectedCalendarIds] = useState([]);
-  const [calendarsLoading, setCalendarsLoading] = useState(false);
-  const [calendarsSaving, setCalendarsSaving] = useState(false);
-  const [calendarsListError, setCalendarsListError] = useState(null);
 
   useEffect(() => {
     setOrigin(window.location.origin);
@@ -54,23 +49,6 @@ export default function AccountSettingsForm() {
         setPolicyNotes(data.policyNotes || "");
         setTagsInput((data.tags || []).join(", "));
         setPlan(data.plan || null);
-
-        if (data.plan?.googleCalendarSyncActive) {
-          setCalendarsLoading(true);
-          try {
-            const calRes = await fetch("/api/account/calendars");
-            const calData = await calRes.json();
-            if (calRes.ok) {
-              setCalendars(calData.calendars || []);
-              setSelectedCalendarIds(calData.selectedIds || []);
-              setCalendarsListError(calData.listError || null);
-            }
-          } catch (_) {
-            /* ignore */
-          } finally {
-            setCalendarsLoading(false);
-          }
-        }
       } catch (e) {
         setResult({ type: "error", message: "Failed to load account info" });
       } finally {
@@ -80,33 +58,6 @@ export default function AccountSettingsForm() {
     load();
   }, []);
 
-  function toggleCalendar(id) {
-    setSelectedCalendarIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-    );
-  }
-
-  async function saveCalendars() {
-    setCalendarsSaving(true);
-    try {
-      const res = await fetch("/api/account/calendars", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ calendarIds: selectedCalendarIds }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setResult({ type: "error", message: data.error || "Failed to save calendars" });
-        return;
-      }
-      setSelectedCalendarIds(data.selectedIds || []);
-      setResult({ type: "success", message: "Calendar selection saved" });
-    } catch (e) {
-      setResult({ type: "error", message: "Failed to save calendars" });
-    } finally {
-      setCalendarsSaving(false);
-    }
-  }
 
   async function handleSave(e) {
     e.preventDefault();
@@ -220,8 +171,7 @@ export default function AccountSettingsForm() {
     );
   }
 
-  const displayLogo = logoUrl || image;
-
+  
   return (
     <div className="max-w-lg space-y-6">
       {/* Public URL preview */}
@@ -287,53 +237,6 @@ export default function AccountSettingsForm() {
               Connect Google Calendar
             </button>
           )}
-          {plan.googleCalendarSyncActive && (
-            <div className="pt-2 space-y-2 border-t border-base-300 mt-2">
-              <p className="text-xs font-medium text-base-content/70">
-                Calendars checked for conflicts
-              </p>
-              {calendarsLoading ? (
-                <p className="text-xs text-base-content/40">Loading calendars…</p>
-              ) : calendars.length === 0 ? (
-                <p className="text-xs text-base-content/40">
-                  {calendarsListError === "missing_scope"
-                    ? "Google did not grant calendar read access. Sign out completely, sign in again, and accept all calendar permissions."
-                    : "No calendars found. Try reconnecting Google (sign out & in)."}
-                </p>
-              ) : (
-                <ul className="space-y-1.5 max-h-40 overflow-y-auto">
-                  {calendars.map((cal) => (
-                    <li key={cal.id}>
-                      <label className="flex items-center gap-2 text-sm cursor-pointer">
-                        <input
-                          type="checkbox"
-                          className="checkbox checkbox-xs"
-                          checked={selectedCalendarIds.includes(cal.id)}
-                          onChange={() => toggleCalendar(cal.id)}
-                        />
-                        <span className="truncate">
-                          {cal.summary}
-                          {cal.primary ? (
-                            <span className="text-xs text-base-content/40 ml-1">(primary)</span>
-                          ) : null}
-                        </span>
-                      </label>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {calendars.length > 0 && (
-                <button
-                  type="button"
-                  onClick={saveCalendars}
-                  disabled={calendarsSaving || selectedCalendarIds.length === 0}
-                  className="btn btn-xs btn-outline"
-                >
-                  {calendarsSaving ? "Saving…" : "Save calendar selection"}
-                </button>
-              )}
-            </div>
-          )}
         </div>
       )}
 
@@ -361,7 +264,7 @@ export default function AccountSettingsForm() {
 
           <div>
             <label className="block text-sm font-medium text-base-content/80 mb-1">
-              Title / role (optional)
+              Title (optional)
             </label>
             <input
               type="text"
@@ -386,11 +289,7 @@ export default function AccountSettingsForm() {
                 pattern="[a-z0-9-]{3,30}"
               />
             </div>
-            <p className="text-xs text-base-content/40 mt-1">
-              We add a short random code to the end (e.g. {usernameBase || "janedoe"}-x7q) so
-              people can&apos;t guess your page and book random slots. Changing this generates a
-              new code, which breaks any links you&apos;ve already shared.
-            </p>
+            <p className="text-xs text-base-content/40 mt-1">Your public booking link</p>
           </div>
 
           <div>
@@ -403,7 +302,7 @@ export default function AccountSettingsForm() {
               rows={2}
               maxLength={280}
               className="textarea textarea-bordered w-full"
-              placeholder="A short line shown under your name"
+              placeholder="One line under your name"
             />
             <p className="text-xs text-base-content/40 mt-1 text-right">{bio.length}/280</p>
           </div>
@@ -415,7 +314,7 @@ export default function AccountSettingsForm() {
 
           <div>
             <label className="block text-sm font-medium text-base-content/80 mb-1">
-              Welcome message (optional)
+              Welcome (optional)
             </label>
             <textarea
               value={welcomeMessage}
@@ -423,16 +322,14 @@ export default function AccountSettingsForm() {
               rows={2}
               maxLength={300}
               className="textarea textarea-bordered w-full"
-              placeholder="Hey! Thanks for stopping by — pick a time that works for you."
+              placeholder="Short welcome on your page"
             />
-            <p className="text-xs text-base-content/40 mt-1">
-              Shown at the top of your booking page instead of your bio, if filled in.
-            </p>
+
           </div>
 
           <div>
             <label className="block text-sm font-medium text-base-content/80 mb-2">
-              Social links (optional)
+              Social (optional)
             </label>
             <div className="space-y-2">
               <input
@@ -461,7 +358,7 @@ export default function AccountSettingsForm() {
 
           <div>
             <label className="block text-sm font-medium text-base-content/80 mb-1">
-              Booking notes (optional)
+              Notes (optional)
             </label>
             <textarea
               value={policyNotes}
@@ -469,11 +366,9 @@ export default function AccountSettingsForm() {
               rows={3}
               maxLength={1000}
               className="textarea textarea-bordered w-full"
-              placeholder="Cancellation policy, what to prepare, meeting format, etc."
+              placeholder="e.g. cancel 24h ahead"
             />
-            <p className="text-xs text-base-content/40 mt-1">
-              Shown in a collapsible section on your booking page.
-            </p>
+
           </div>
 
           <div>
@@ -487,9 +382,7 @@ export default function AccountSettingsForm() {
               className="input input-bordered w-full"
               placeholder="Product, Consulting, 1:1"
             />
-            <p className="text-xs text-base-content/40 mt-1">
-              Comma-separated, up to 6. Shown as small tags on your booking page.
-            </p>
+            <p className="text-xs text-base-content/40 mt-1">Up to 6, comma-separated</p>
           </div>
 
           <div>
@@ -525,14 +418,7 @@ export default function AccountSettingsForm() {
                 </button>
               )}
             </div>
-            <p className="text-xs text-base-content/50 mt-2 leading-relaxed">
-              Displayed as a <strong>circle</strong> on your booking page. Prefer a
-              square image, at least <strong>256×256 px</strong> (512×512 is ideal).
-              Avoid important text near the edges—it may be cropped.
-            </p>
-            <p className="text-xs text-base-content/40 mt-2">
-              Or paste an image URL instead:
-            </p>
+            <p className="text-xs text-base-content/40 mt-2">Square image works best. Or paste URL:</p>
             <input
               type="url"
               value={logoUrl.startsWith("data:") ? "" : logoUrl}
@@ -541,7 +427,7 @@ export default function AccountSettingsForm() {
               placeholder="https://example.com/logo.png"
             />
             <p className="text-xs text-base-content/40 mt-1">
-              Leave blank to use your Google profile picture instead.
+              Blank = Google photo
             </p>
           </div>
 
@@ -566,40 +452,6 @@ export default function AccountSettingsForm() {
             </div>
           </div>
 
-          {/* Live preview */}
-          <div>
-            <p className="text-xs text-base-content/50 mb-2">Preview</p>
-            <div className="rounded-xl border border-base-300 bg-base-200 p-5 text-center space-y-2">
-              {displayLogo ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={displayLogo}
-                  alt={name}
-                  className="w-12 h-12 rounded-full mx-auto object-cover"
-                />
-              ) : (
-                <div
-                  className="w-12 h-12 rounded-full mx-auto flex items-center justify-center text-white font-bold"
-                  style={{ backgroundColor: brandColor }}
-                >
-                  {name.charAt(0) || "?"}
-                </div>
-              )}
-              <p className="font-bold">{name || "Your name"}</p>
-              {title && <p className="text-xs text-base-content/50 -mt-1.5">{title}</p>}
-              <p className="text-sm text-base-content/60">
-                {welcomeMessage || bio || "Pick a time below."}
-              </p>
-              <button
-                type="button"
-                className="btn btn-sm mt-2"
-                style={{ backgroundColor: brandColor, borderColor: brandColor, color: "white" }}
-                disabled
-              >
-                30 Minute Meeting
-              </button>
-            </div>
-          </div>
         </div>
 
         {result && (

@@ -1,16 +1,14 @@
 import AccountSettingsForm from "@/components/AccountSettingsForm";
+import DashboardPageWash from "@/components/DashboardPageWash";
 
 export default function SettingsPage() {
   return (
-    <section className="space-y-8">
-      <div className="space-y-2">
-        <h1 className="text-2xl md:text-3xl font-extrabold">Settings</h1>
-        <p className="text-base-content/60">
-          Set your username to get your public booking page link.
-        </p>
+    <DashboardPageWash tone="amber" className="space-y-6">
+      <div>
+        <h1 className="text-xl md:text-2xl font-bold tracking-tight">Settings</h1>
+        <p className="text-sm text-base-content/55 mt-1">Profile and booking page</p>
       </div>
-
       <AccountSettingsForm />
-    </section>
+    </DashboardPageWash>
   );
 }

@@ -28,20 +28,41 @@ function formatNoticeLabel(minutes) {
   return `${minutes} minute${minutes === 1 ? "" : "s"}`;
 }
 
-/** 信尾：Reschedule / Cancel 連結 + 截止時間提醒 */
+/** 信尾：Reschedule / Cancel 做成明顯按鈕（多數郵件客戶端可用 inline style） */
 function actionLinksBlock({ cancelUrl, rescheduleUrl, minimumNoticeMinutes }) {
   const notice = formatNoticeLabel(minimumNoticeMinutes);
   const hasLinks = Boolean(rescheduleUrl || cancelUrl);
-  const links = hasLinks
-    ? `<p style="font-size: 13px; margin-top: 20px; color: #6b7280;">
-      ${rescheduleUrl ? `<a href="${escapeHtml(rescheduleUrl)}" style="color: #2563eb;">Reschedule</a>` : ""}
-      ${rescheduleUrl && cancelUrl ? " · " : ""}
-      ${cancelUrl ? `<a href="${escapeHtml(cancelUrl)}" style="color: #6b7280;">Cancel</a>` : ""}
-    </p>`
-    : "";
+
+  let links = "";
+  if (hasLinks) {
+    const rescheduleBtn = rescheduleUrl
+      ? `<td style="padding-right: 10px;">
+          <a href="${escapeHtml(rescheduleUrl)}"
+             style="display: inline-block; background-color: #4f46e5; color: #ffffff; text-decoration: none; padding: 12px 22px; border-radius: 8px; font-size: 14px; font-weight: 600; line-height: 1.2; mso-padding-alt: 0;">
+            Reschedule
+          </a>
+        </td>`
+      : "";
+    const cancelBtn = cancelUrl
+      ? `<td>
+          <a href="${escapeHtml(cancelUrl)}"
+             style="display: inline-block; background-color: #ffffff; color: #b91c1c; text-decoration: none; padding: 11px 22px; border-radius: 8px; font-size: 14px; font-weight: 600; line-height: 1.2; border: 1px solid #fca5a5; mso-padding-alt: 0;">
+            Cancel
+          </a>
+        </td>`
+      : "";
+    links = `
+    <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin-top: 24px; margin-bottom: 4px;">
+      <tr>
+        ${rescheduleBtn}
+        ${cancelBtn}
+      </tr>
+    </table>`;
+  }
+
   const policy = notice
-    ? `<p style="font-size: 12px; color: #9ca3af; margin-top: 8px;">
-         Please reschedule or cancel at least <strong>${escapeHtml(notice)}</strong> before the start time.
+    ? `<p style="font-size: 12px; color: #9ca3af; margin-top: 12px; line-height: 1.5;">
+         Please reschedule or cancel at least <strong style="color: #6b7280;">${escapeHtml(notice)}</strong> before the start time.
        </p>`
     : "";
   return `${links}${policy}`;

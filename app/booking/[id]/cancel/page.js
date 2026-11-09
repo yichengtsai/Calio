@@ -112,11 +112,13 @@ function CancelInner({ id }) {
             </p>
           </div>
         ) : loading || !booking ? (
-          <div className="text-center space-y-2">
-            <span className="loading loading-spinner loading-md" />
-            <p className="text-sm text-base-content/50">Loading your booking…</p>
-            <p className="text-xs text-base-content/40">
-              First load can take a few seconds if the database is waking up.
+          <div className="space-y-3 animate-pulse">
+            <div className="h-6 w-2/3 mx-auto rounded bg-base-300" />
+            <div className="h-4 w-full rounded bg-base-200" />
+            <div className="h-4 w-5/6 mx-auto rounded bg-base-200" />
+            <div className="h-11 w-full rounded-xl bg-base-300 mt-4" />
+            <p className="text-xs text-base-content/40 text-center pt-1">
+              Loading… first open can take a moment if the server is waking up.
             </p>
           </div>
         ) : booking.status === "cancelled" ? (

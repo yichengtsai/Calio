@@ -206,34 +206,79 @@ export default function BookingsList() {
 
   const list = tab === "pending" ? pending : tab === "upcoming" ? upcoming : past;
 
+  const tabMeta = {
+    pending: {
+      label: "Pending",
+      count: pending.length,
+      bg: "linear-gradient(145deg, color-mix(in oklab, #f59e0b 22%, var(--color-base-100)), var(--color-base-100))",
+      border: "color-mix(in oklab, #f59e0b 55%, var(--color-base-300))",
+      activeRing: "#f59e0b",
+    },
+    upcoming: {
+      label: "Upcoming",
+      count: upcoming.length,
+      bg: "linear-gradient(145deg, color-mix(in oklab, #0ea5e9 22%, var(--color-base-100)), var(--color-base-100))",
+      border: "color-mix(in oklab, #0ea5e9 55%, var(--color-base-300))",
+      activeRing: "#0ea5e9",
+    },
+    past: {
+      label: "Past",
+      count: past.length,
+      bg: "linear-gradient(145deg, color-mix(in oklab, #8b5cf6 22%, var(--color-base-100)), var(--color-base-100))",
+      border: "color-mix(in oklab, #8b5cf6 55%, var(--color-base-300))",
+      activeRing: "#8b5cf6",
+    },
+  };
+
+  const rowStyle = {
+    pending: {
+      background:
+        "linear-gradient(145deg, color-mix(in oklab, #f59e0b 18%, var(--color-base-100)), var(--color-base-100))",
+      border: "2px solid color-mix(in oklab, #f59e0b 50%, var(--color-base-300))",
+    },
+    upcoming: {
+      background:
+        "linear-gradient(145deg, color-mix(in oklab, #0ea5e9 18%, var(--color-base-100)), var(--color-base-100))",
+      border: "2px solid color-mix(in oklab, #0ea5e9 50%, var(--color-base-300))",
+    },
+    past: {
+      background:
+        "linear-gradient(145deg, color-mix(in oklab, #8b5cf6 18%, var(--color-base-100)), var(--color-base-100))",
+      border: "2px solid color-mix(in oklab, #8b5cf6 50%, var(--color-base-300))",
+    },
+  };
+
   return (
     <div className="space-y-5">
-      <div role="tablist" className="tabs tabs-boxed w-fit">
-        <button
-          role="tab"
-          onClick={() => setTab("pending")}
-          className={`tab ${tab === "pending" ? "tab-active" : ""}`}
-        >
-          Pending ({pending.length})
-        </button>
-        <button
-          role="tab"
-          onClick={() => setTab("upcoming")}
-          className={`tab ${tab === "upcoming" ? "tab-active" : ""}`}
-        >
-          Upcoming ({upcoming.length})
-        </button>
-        <button
-          role="tab"
-          onClick={() => setTab("past")}
-          className={`tab ${tab === "past" ? "tab-active" : ""}`}
-        >
-          Past ({past.length})
-        </button>
+      <div className="grid grid-cols-3 gap-2.5">
+        {(["pending", "upcoming", "past"]).map((id) => {
+          const m = tabMeta[id];
+          const active = tab === id;
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setTab(id)}
+              className="text-left rounded-xl px-3 py-3 transition-all active:scale-[0.98]"
+              style={{
+                background: m.bg,
+                border: active ? `3px solid ${m.activeRing}` : `2px solid ${m.border}`,
+                boxShadow: active
+                  ? `0 0 0 3px ${m.activeRing}40, 0 4px 12px ${m.activeRing}30`
+                  : "0 1px 3px rgba(0,0,0,0.06)",
+                transform: active ? "translateY(-1px)" : undefined,
+                opacity: active ? 1 : 0.85,
+              }}
+            >
+              <p className="text-[11px] font-medium text-base-content/70">{m.label}</p>
+              <p className="text-xl font-bold tabular-nums mt-0.5">{m.count}</p>
+            </button>
+          );
+        })}
       </div>
 
       {list.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-base-300 p-10 text-center text-sm text-base-content/50">
+        <div className="rounded-2xl border border-dashed border-base-300 p-10 text-center text-sm text-base-content/50 bg-base-100/80">
           {tab === "pending" && "No requests waiting on you."}
           {tab === "upcoming" && "No upcoming bookings."}
           {tab === "past" && "Nothing here yet."}
@@ -243,11 +288,10 @@ export default function BookingsList() {
           {list.map((b) => (
             <div
               key={b.id}
-              className={`rounded-xl border px-5 py-4 ${
-                b.status === "pending"
-                  ? "border-warning/40 bg-warning/5"
-                  : "border-base-300 bg-base-200"
-              } ${b.status === "cancelled" || b.status === "declined" ? "opacity-50" : ""}`}
+              className={`rounded-xl px-5 py-4 shadow-sm ${
+                b.status === "cancelled" || b.status === "declined" ? "opacity-50" : ""
+              }`}
+              style={rowStyle[tab] || rowStyle.upcoming}
             >
               <div className="flex items-center gap-4">
                 <span

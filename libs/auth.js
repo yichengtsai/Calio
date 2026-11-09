@@ -92,6 +92,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
   },
   session: { strategy: "jwt" },
+  pages: {
+    signIn: "/login",
+  },
   theme: {
     brandColor: config.colors.main,
     logo: "/logo.png",

@@ -329,7 +329,7 @@ function RescheduleInner({ id }) {
           </div>
         ) : !meta || !timezone ? (
           <div className="rounded-2xl border border-base-300 bg-base-200 p-10 text-center space-y-2">
-            <span className="loading loading-spinner loading-md" />
+            <span className="loading loading-spinner loading-sm" />
             <p className="text-sm text-base-content/50">Loading…</p>
           </div>
         ) : (

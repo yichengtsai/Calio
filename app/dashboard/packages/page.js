@@ -1,9 +1,10 @@
 import ClientPackagesManager from "@/components/ClientPackagesManager";
+import DashboardPageWash from "@/components/DashboardPageWash";
 
 export default function PackagesPage() {
   return (
-    <section>
+    <DashboardPageWash tone="emerald">
       <ClientPackagesManager />
-    </section>
+    </DashboardPageWash>
   );
 }

@@ -31,6 +31,8 @@ export default async function PublicProfilePage({ params }) {
 
   const brandColor = user.brandColor || "#6366f1";
   const displayLogo = user.logoUrl || user.image || null;
+  const tags = Array.isArray(user.tags) ? user.tags.filter(Boolean).slice(0, 6) : [];
+  const policyNotes = (user.policyNotes || "").trim();
 
   const eventTypes = eventTypeDocs.map((et) => ({
     slug: et.slug,
@@ -45,71 +47,126 @@ export default async function PublicProfilePage({ params }) {
     currency: et.currency || "TWD",
   }));
 
-  // Client Component 只能收 plain object，不能傳 Mongoose document
-  const socialUser = {
-    linkedin: user.linkedin || "",
-    website: user.website || "",
-    instagram: user.instagram || "",
-    socialLinks: user.socialLinks || undefined,
+  // SocialLinks expects { socialLinks, brandColor } — not user={...}
+  const socialLinks = {
+    linkedin: user.socialLinks?.linkedin || user.linkedin || "",
+    website: user.socialLinks?.website || user.website || "",
+    instagram: user.socialLinks?.instagram || user.instagram || "",
   };
 
   return (
-    <main className="min-h-screen py-12 px-6">
-      <div className="max-w-2xl mx-auto space-y-6">
-        <div className="rounded-2xl border border-base-300 bg-base-200 p-8 text-center space-y-2.5">
-          {displayLogo ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={displayLogo}
-              alt={user.name || ""}
-              className="w-20 h-20 rounded-full mx-auto object-cover mb-1"
-            />
-          ) : (
-            <div
-              className="w-20 h-20 rounded-full mx-auto flex items-center justify-center text-white text-2xl font-bold mb-1"
-              style={{ backgroundColor: brandColor }}
-            >
-              {user.name?.charAt(0) || "?"}
+    <main className="min-h-screen bg-base-200">
+      <div className="mx-auto w-full max-w-4xl px-3 py-5 sm:px-6 sm:py-10 lg:px-8 lg:py-12 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+        <div className="overflow-hidden rounded-xl bg-base-100 shadow-sm ring-1 ring-base-content/5">
+          <div className="lg:grid lg:grid-cols-[minmax(240px,300px)_1fr]">
+            {/* Profile */}
+            <div className="border-b border-base-300 px-4 py-5 sm:px-8 lg:border-b-0 lg:border-r lg:py-9">
+              <div className="flex flex-row items-start gap-4 lg:flex-col lg:items-stretch">
+                {displayLogo ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={displayLogo}
+                    alt=""
+                    className="size-14 shrink-0 rounded-full object-cover sm:size-16"
+                    style={{ boxShadow: `0 0 0 1px ${brandColor}33` }}
+                  />
+                ) : (
+                  <div
+                    className="flex size-14 shrink-0 items-center justify-center rounded-full text-lg font-semibold text-white sm:size-16"
+                    style={{ backgroundColor: brandColor }}
+                  >
+                    {(user.name || "?").charAt(0)}
+                  </div>
+                )}
+                <div className="min-w-0 flex-1 space-y-2.5">
+                  <div>
+                    <h1 className="text-lg font-semibold tracking-tight text-base-content sm:text-xl">
+                      {user.name}
+                    </h1>
+                    {user.title ? (
+                      <p className="mt-0.5 text-sm text-base-content/55">{user.title}</p>
+                    ) : null}
+                  </div>
+
+                  {tags.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {tags.map((tag) => (
+                        <span
+                          key={tag}
+                          className="inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset"
+                          style={{
+                            color: brandColor,
+                            backgroundColor: `${brandColor}14`,
+                            borderColor: `${brandColor}33`,
+                          }}
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  {(user.welcomeMessage || user.bio) ? (
+                    <p className="text-sm leading-relaxed text-base-content/50 whitespace-pre-line">
+                      {user.welcomeMessage || user.bio}
+                    </p>
+                  ) : null}
+
+                  <div className="pt-1">
+                    <SocialLinks socialLinks={socialLinks} brandColor={brandColor} />
+                  </div>
+
+                  {policyNotes ? (
+                    <details className="group rounded-lg border border-base-300 bg-base-200/50 open:bg-base-200/70">
+                      <summary className="cursor-pointer list-none px-3 py-2 text-xs font-medium text-base-content/70 flex items-center justify-between gap-2">
+                        <span>Booking notes</span>
+                        <span className="text-base-content/40 group-open:rotate-180 transition-transform">
+                          ▾
+                        </span>
+                      </summary>
+                      <div className="px-3 pb-3 text-sm text-base-content/60 whitespace-pre-line leading-relaxed border-t border-base-300/60 pt-2">
+                        {policyNotes}
+                      </div>
+                    </details>
+                  ) : null}
+
+                  {confirmedCount > 0 ? (
+                    <p className="text-xs text-base-content/40">
+                      {confirmedCount} confirmed booking
+                      {confirmedCount === 1 ? "" : "s"}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
             </div>
-          )}
 
-          <div>
-            <h1 className="text-2xl font-extrabold">{user.name}</h1>
-            {user.title && (
-              <p className="text-sm font-medium mt-0.5" style={{ color: brandColor }}>
-                {user.title}
-              </p>
-            )}
+            {/* Meetings */}
+            <div className="px-3 py-4 sm:px-6 sm:py-6 lg:py-8">
+              <h2 className="mb-2.5 px-1 text-sm font-medium text-base-content/70">
+                Select a meeting
+              </h2>
+              <Suspense
+                fallback={
+                  <div className="h-40 animate-pulse rounded-xl bg-base-200" />
+                }
+              >
+                <EventTypePicker
+                  username={username}
+                  eventTypes={eventTypes}
+                  organizerName={user.name || ""}
+                  organizerImage={displayLogo}
+                  brandColor={brandColor}
+                />
+              </Suspense>
+            </div>
           </div>
-
-          {(user.welcomeMessage || user.bio) && (
-            <p className="text-base-content/60 text-sm max-w-md mx-auto whitespace-pre-line">
-              {user.welcomeMessage || user.bio}
-            </p>
-          )}
-
-          <SocialLinks user={socialUser} />
-
-          {confirmedCount > 0 && (
-            <p className="text-xs text-base-content/40">
-              {confirmedCount} confirmed booking{confirmedCount === 1 ? "" : "s"}
-            </p>
-          )}
         </div>
 
-        <Suspense fallback={<div className="h-64 rounded-2xl bg-base-200 animate-pulse" />}>
-          <EventTypePicker
-            username={username}
-            eventTypes={eventTypes}
-            organizerName={user.name || ""}
-            organizerImage={displayLogo}
-            brandColor={brandColor}
-          />
-        </Suspense>
+        <div className="mt-6 max-w-md mx-auto lg:mx-0 lg:max-w-none">
+          <FeedbackForm username={username} compact />
+        </div>
 
-        <FeedbackForm username={username} compact />
-
-        <p className="text-center text-xs text-base-content/30">
+        <p className="mt-8 text-center text-xs text-base-content/35 lg:text-left">
           Powered by {config.appName}
         </p>
       </div>

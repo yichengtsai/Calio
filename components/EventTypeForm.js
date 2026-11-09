@@ -153,48 +153,47 @@ export default function EventTypeForm({ eventTypeId }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="max-w-lg space-y-5">
+    <form
+      onSubmit={handleSubmit}
+      className="max-w-lg space-y-5 rounded-2xl border border-base-300 bg-base-100 p-5 sm:p-6 shadow-sm"
+    >
       <div>
-        <label className="block text-sm font-medium text-base-content/80 mb-1">Name</label>
+        <label className="block text-sm font-medium text-base-content/80 mb-1.5">Name</label>
         <input type="text" required value={title} onChange={(e) => setTitle(e.target.value)}
-          className="input input-bordered w-full" placeholder="e.g. 30 Minute Consultation" />
+          className="input input-bordered w-full rounded-xl bg-base-100 border-base-300 focus:border-primary focus:outline-none" placeholder="e.g. 30-min intro" />
       </div>
       <div>
-        <label className="block text-sm font-medium text-base-content/80 mb-1">
-          Session description / focus (visible to guests)
+        <label className="block text-sm font-medium text-base-content/80 mb-1.5">
+          Description <span className="font-normal text-base-content/45">(optional)</span>
         </label>
         <textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          rows={5}
+          rows={3}
           maxLength={2000}
-          className="textarea textarea-bordered w-full"
-          placeholder="e.g. Focus on lower-body strength and stability. Best for intermediate trainees. Wear training shoes; arrive 5 minutes early."
+          className="textarea textarea-bordered w-full rounded-xl bg-base-100 border-base-300 focus:border-primary focus:outline-none"
+          placeholder="Short note for guests"
         />
-        <p className="text-xs text-base-content/50 mt-1">
-          Shown on the guest booking list and booking page. Include teaching focus, who it is for, and any notes.
-        </p>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-sm font-medium text-base-content/80 mb-1">Price (optional)</label>
+          <label className="block text-sm font-medium text-base-content/80 mb-1.5">Price <span className="font-normal text-base-content/45">(optional)</span></label>
           <input
             type="number"
             min={0}
             step="1"
             value={price}
             onChange={(e) => setPrice(e.target.value)}
-            className="input input-bordered w-full"
-            placeholder="e.g. 1500"
+            className="input input-bordered w-full rounded-xl bg-base-100 border-base-300 focus:border-primary focus:outline-none"
+            placeholder="0"
           />
-          <p className="text-xs text-base-content/50 mt-1">Shown on booking page. Leave empty to hide.</p>
         </div>
         <div>
-          <label className="block text-sm font-medium text-base-content/80 mb-1">Currency</label>
+          <label className="block text-sm font-medium text-base-content/80 mb-1.5">Currency</label>
           <select
             value={currency}
             onChange={(e) => setCurrency(e.target.value)}
-            className="select select-bordered w-full"
+            className="select select-bordered w-full rounded-xl bg-base-100 border-base-300 shadow-sm focus:border-primary focus:outline-none"
           >
             <option value="TWD">TWD</option>
             <option value="USD">USD</option>
@@ -223,16 +222,11 @@ export default function EventTypeForm({ eventTypeId }) {
       <div>
         <label className="block text-sm font-medium text-base-content/80 mb-1">Location type</label>
         <select value={locationType} onChange={(e) => setLocationType(e.target.value)}
-          className="select select-bordered w-full">
+          className="select select-bordered w-full rounded-xl bg-base-100 border-base-300 shadow-sm focus:border-primary focus:outline-none">
           {LOCATION_TYPE_OPTIONS.map((opt) => (
             <option key={opt.value} value={opt.value}>{opt.label}</option>
           ))}
         </select>
-        {locationType === "google_meet" && (
-          <p className="text-xs text-base-content/50 mt-1">
-            A Google Meet link is created automatically when the booking is confirmed (Pro + connected Google Calendar).
-          </p>
-        )}
       </div>
       {locationType !== "google_meet" && (
         <div>
@@ -242,7 +236,7 @@ export default function EventTypeForm({ eventTypeId }) {
               : "Location / meeting link (optional)"}
           </label>
           <input type="text" value={location} onChange={(e) => setLocation(e.target.value)}
-            className="input input-bordered w-full"
+            className="input input-bordered w-full rounded-xl bg-base-100 border-base-300 focus:border-primary focus:outline-none"
             placeholder={locationType === "in_person" ? "e.g. 123 Main St, Taipei"
               : locationType === "phone" ? "e.g. I'll call you" : "e.g. https://zoom.us/j/xxx"} />
         </div>
@@ -302,9 +296,9 @@ export default function EventTypeForm({ eventTypeId }) {
         <summary className="text-sm font-medium cursor-pointer select-none">Availability rules</summary>
         <div className="mt-4 space-y-4">
           <div>
-            <label className="block text-sm font-medium text-base-content/80 mb-1">Buffer time between bookings</label>
+            <label className="block text-sm font-medium text-base-content/80 mb-1">Buffer</label>
             <select value={bufferMinutes} onChange={(e) => setBufferMinutes(Number(e.target.value))}
-              className="select select-bordered select-sm w-full max-w-[200px]">
+              className="select select-bordered select-sm w-full max-w-[200px] rounded-lg bg-base-100 border-base-300 shadow-sm">
               <option value={0}>No buffer</option>
               <option value={5}>5 minutes</option>
               <option value={10}>10 minutes</option>
@@ -312,9 +306,6 @@ export default function EventTypeForm({ eventTypeId }) {
               <option value={30}>30 minutes</option>
               <option value={60}>60 minutes</option>
             </select>
-            <p className="text-xs text-base-content/50 mt-1">
-              Padding before and after this booking so it won&apos;t sit flush against another booking or meeting.
-            </p>
           </div>
           <div>
             <label className="block text-sm font-medium text-base-content/80 mb-1">
@@ -323,7 +314,7 @@ export default function EventTypeForm({ eventTypeId }) {
             <select
               value={String(slotIntervalMinutes)}
               onChange={(e) => setSlotIntervalMinutes(Number(e.target.value))}
-              className="select select-bordered select-sm w-full max-w-[200px]"
+              className="select select-bordered select-sm w-full max-w-[200px] rounded-lg bg-base-100 border-base-300 shadow-sm"
             >
               <option value="0">Same as duration (default)</option>
               <option value="5">Every 5 minutes</option>
@@ -332,14 +323,11 @@ export default function EventTypeForm({ eventTypeId }) {
               <option value="30">Every 30 minutes</option>
               <option value="60">Every 60 minutes</option>
             </select>
-            <p className="text-xs text-base-content/50 mt-1">
-              Gap between possible start times (e.g. every 15 min → 10:00, 10:15, 10:30). Each start still needs the full duration free inside your hours, and won&apos;t overlap other bookings/meetings including buffer.
-            </p>
           </div>
           <div>
             <label className="block text-sm font-medium text-base-content/80 mb-1">Minimum notice</label>
             <select value={minimumNoticeHours} onChange={(e) => setMinimumNoticeHours(Number(e.target.value))}
-              className="select select-bordered select-sm w-full max-w-[200px]">
+              className="select select-bordered select-sm w-full max-w-[200px] rounded-lg bg-base-100 border-base-300 shadow-sm">
               <option value={0}>No minimum</option>
               <option value={1}>1 hour</option>
               <option value={4}>4 hours</option>
@@ -349,26 +337,26 @@ export default function EventTypeForm({ eventTypeId }) {
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-base-content/80 mb-1">How far ahead can people book</label>
+            <label className="block text-sm font-medium text-base-content/80 mb-1">Bookable window</label>
             <select value={bookingWindowDays} onChange={(e) => setBookingWindowDays(Number(e.target.value))}
-              className="select select-bordered select-sm w-full max-w-[200px]">
+              className="select select-bordered select-sm w-full max-w-[200px] rounded-lg bg-base-100 border-base-300 shadow-sm">
               {WINDOW_PRESETS.map((opt) => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
               ))}
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-base-content/80 mb-1">Max bookings per day</label>
+            <label className="block text-sm font-medium text-base-content/80 mb-1">Max per day</label>
             <select value={maxBookingsPerDay} onChange={(e) => setMaxBookingsPerDay(Number(e.target.value))}
-              className="select select-bordered select-sm w-full max-w-[200px]">
+              className="select select-bordered select-sm w-full max-w-[200px] rounded-lg bg-base-100 border-base-300 shadow-sm">
               <option value={0}>No limit</option>
               {[1,2,3,4,5,8,10].map((n) => <option key={n} value={n}>{n}</option>)}
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-base-content/80 mb-1">Email reminder</label>
+            <label className="block text-sm font-medium text-base-content/80 mb-1">Reminder</label>
             <select value={reminderMinutesBefore} onChange={(e) => setReminderMinutesBefore(Number(e.target.value))}
-              className="select select-bordered select-sm w-full max-w-[200px]">
+              className="select select-bordered select-sm w-full max-w-[200px] rounded-lg bg-base-100 border-base-300 shadow-sm">
               {REMINDER_PRESETS.map((opt) => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
               ))}

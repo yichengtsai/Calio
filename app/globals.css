@@ -119,3 +119,175 @@ progress::-webkit-progress-value {
 .btn {
   text-transform: capitalize !important;
 }
+
+/* ═══════════════════════════════════════════
+   Calio — dashboard motion & page transitions
+   ═══════════════════════════════════════════ */
+
+@keyframes calio-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes calio-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes calio-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes calio-page-in {
+  from {
+    opacity: 0.92;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.calio-enter {
+  animation: calio-fade-up 0.22s ease-out both;
+}
+.calio-enter-delay-1 { animation-delay: 0.03s; }
+.calio-enter-delay-2 { animation-delay: 0.06s; }
+.calio-enter-delay-3 { animation-delay: 0.09s; }
+.calio-enter-delay-4 { animation-delay: 0.12s; }
+
+/* Dashboard route change (keep short for snappy sidebar nav) */
+.calio-page-enter {
+  animation: calio-page-in 0.1s ease-out both;
+}
+
+.calio-panel {
+  animation: calio-scale-in 0.28s ease-out both;
+  border-radius: 1rem;
+  border: 1px solid color-mix(in oklab, var(--color-base-content) 8%, transparent);
+  background: var(--color-base-100);
+  box-shadow:
+    0 1px 2px color-mix(in oklab, var(--color-base-content) 4%, transparent),
+    0 8px 24px -12px color-mix(in oklab, var(--color-base-content) 10%, transparent);
+}
+
+.calio-nav-item {
+  transition: background-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+.calio-nav-item:hover {
+  transform: translateX(2px);
+}
+
+.calio-stat-strip {
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.calio-stat-strip:hover {
+  border-color: color-mix(in oklab, var(--color-primary) 25%, transparent);
+  box-shadow: 0 4px 16px -8px color-mix(in oklab, var(--color-primary) 20%, transparent);
+}
+
+.calio-seg-btn {
+  transition: background-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+}
+.calio-seg-btn-active {
+  box-shadow: 0 1px 3px color-mix(in oklab, var(--color-base-content) 12%, transparent);
+}
+
+/* Public booking page cards */
+.calio-book-card {
+  border-radius: 1rem;
+  border: 1px solid color-mix(in oklab, var(--color-base-content) 8%, transparent);
+  background: var(--color-base-100);
+  box-shadow: 0 8px 30px rgb(0 0 0 / 0.06);
+}
+
+.calio-slot-btn {
+  transition: transform 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
+}
+.calio-slot-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .calio-enter,
+  .calio-page-enter,
+  .calio-panel,
+  .calio-nav-item:hover,
+  .calio-slot-btn:hover:not(:disabled) {
+    animation: none !important;
+    transform: none !important;
+  }
+}
+
+/* Workspace soft surfaces */
+.calio-workspace-wash {
+  background:
+    radial-gradient(ellipse 80% 50% at 0% 0%, color-mix(in oklab, var(--color-primary) 12%, transparent), transparent 55%),
+    radial-gradient(ellipse 60% 40% at 100% 10%, color-mix(in oklab, var(--color-secondary) 10%, transparent), transparent 50%);
+}
+
+/* Soft gradient cards: text always follows theme */
+.calio-soft-card {
+  color: var(--color-base-content);
+}
+.calio-soft-card p,
+.calio-soft-card h1,
+.calio-soft-card h2,
+.calio-soft-card h3 {
+  color: inherit;
+}
+
+
+/* ─── Smooth switches (dashboard + booking) ─── */
+@keyframes calio-route-swap {
+  from { opacity: 0.88; }
+  to { opacity: 1; }
+}
+@keyframes calio-step-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.calio-route-swap {
+  animation: calio-route-swap 0.08s ease-out both;
+}
+
+.calio-step-in {
+  animation: calio-step-in 0.12s ease-out both;
+}
+
+.calio-page-enter {
+  animation: calio-route-swap 0.08s ease-out both;
+}
+
+/* Instant hide/show panels (Workspace tabs) — no fade delay */
+.calio-tab-panel-hidden {
+  display: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .calio-route-swap,
+  .calio-step-in,
+  .calio-page-enter,
+  .animate-opacity,
+  .animate-appearFromRight,
+  .animate-popup {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+  }
+}

@@ -151,17 +151,22 @@ export default function EventTypeList() {
         const url = bookingUrl(et.slug);
         const isSharing = sharingId === et.id;
 
+        const color = et.color || "#6366f1";
         return (
           <div
             key={et.id}
-            className={`rounded-xl border border-base-300 bg-base-200 px-5 py-4 transition-opacity ${
+            className={`rounded-xl px-5 py-4 transition-opacity shadow-sm ${
               et.isActive ? "" : "opacity-50"
             }`}
+            style={{
+              background: `linear-gradient(145deg, color-mix(in oklab, ${color} 24%, var(--color-base-100)), var(--color-base-100))`,
+              border: `2px solid color-mix(in oklab, ${color} 55%, var(--color-base-300))`,
+            }}
           >
             <div className="flex items-center gap-4">
               <span
-                className="w-2.5 h-2.5 rounded-full shrink-0"
-                style={{ backgroundColor: et.color }}
+                className="w-2.5 h-2.5 rounded-full shrink-0 ring-2 ring-white shadow-sm"
+                style={{ backgroundColor: color }}
               />
 
               <div className="flex-1 min-w-0">

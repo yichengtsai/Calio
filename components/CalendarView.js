@@ -177,9 +177,15 @@ export default function CalendarView() {
 
   async function loadSchedule() {
     try {
-      const res = await fetch("/api/schedule");
-      const data = await res.json();
-      setItems(data.items || []);
+      // Phase 1: Mongo only — paint calendar immediately
+      const localRes = await fetch("/api/schedule?local=1");
+      const localData = await localRes.json();
+      if (localData.items) setItems(localData.items);
+
+      // Phase 2: merge Google events in background
+      const fullRes = await fetch("/api/schedule");
+      const fullData = await fullRes.json();
+      if (fullData.items) setItems(fullData.items);
     } catch (e) {
       setError("Failed to load your schedule");
     }
@@ -779,7 +785,10 @@ export default function CalendarView() {
     <div className="space-y-4">
       {/* 統計卡片 */}
       <div className="grid grid-cols-3 gap-2.5">
-        <div className="rounded-xl border border-base-300 bg-base-200 px-4 py-2.5">
+        <div
+          className="rounded-xl border border-violet-200/80 px-4 py-2.5 shadow-sm"
+          style={{ background: "linear-gradient(145deg, color-mix(in oklab, #8b5cf6 20%, var(--color-base-100)), var(--color-base-100))" }}
+        >
           <p className="text-xs text-base-content/50">Today</p>
           <div className="flex items-baseline gap-1.5">
             <p className="text-2xl font-bold">{stats.todayCount}</p>
@@ -796,7 +805,10 @@ export default function CalendarView() {
           </p>
         </div>
 
-        <div className="rounded-xl border border-base-300 bg-base-200 px-4 py-2.5">
+        <div
+          className="rounded-xl border border-sky-200/80 px-4 py-2.5 shadow-sm"
+          style={{ background: "linear-gradient(145deg, color-mix(in oklab, #0ea5e9 20%, var(--color-base-100)), var(--color-base-100))" }}
+        >
           <p className="text-xs text-base-content/50">This week</p>
           <div className="flex items-baseline gap-1.5">
             <p className="text-2xl font-bold">{stats.weekCount}</p>
@@ -805,7 +817,10 @@ export default function CalendarView() {
           <p className="text-[11px] text-base-content/40 mt-0.5">across 7 days</p>
         </div>
 
-        <div className="rounded-xl border border-base-300 bg-base-200 px-4 py-2.5 relative">
+        <div
+          className="rounded-xl border border-emerald-200/80 px-4 py-2.5 relative shadow-sm"
+          style={{ background: "linear-gradient(145deg, color-mix(in oklab, #10b981 20%, var(--color-base-100)), var(--color-base-100))" }}
+        >
           <p className="text-xs text-base-content/50">This month</p>
           <div className="flex items-baseline gap-1.5">
             <p className="text-2xl font-bold">{stats.monthCount}</p>
@@ -883,7 +898,7 @@ export default function CalendarView() {
       </div>
 
       {view === "month" ? (
-        <div className="rounded-2xl border border-base-300 bg-base-200 overflow-hidden animate-opacity">
+        <div className="rounded-2xl border border-base-300/80 bg-base-100 overflow-hidden shadow-sm animate-opacity">
           <div className="grid grid-cols-7 border-b border-base-300">
             {DAY_LABELS.map((label) => (
               <div

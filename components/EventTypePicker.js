@@ -306,13 +306,10 @@ export default function EventTypePicker({
     return (
       <div className="rounded-2xl border border-base-300 bg-base-200 overflow-hidden shadow-sm">
         <div className="h-1.5" style={{ backgroundColor: brandColor }} />
-        <form onSubmit={handleIdentify} className="p-6 sm:p-8 space-y-5">
+        <form onSubmit={handleIdentify} className="p-4 sm:p-8 space-y-4 sm:space-y-5">
           <div className="text-center space-y-1">
-            <h2 className="text-lg font-bold">Enter your email to book</h2>
-            <p className="text-sm text-base-content/60">
-              We&apos;ll show courses available for you, remaining sessions, and
-              pricing.
-            </p>
+            <h2 className="text-lg font-bold">Your email</h2>
+            <p className="text-sm text-base-content/60">For packages and confirmation</p>
           </div>
 
           <div>
@@ -324,7 +321,7 @@ export default function EventTypePicker({
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="input input-bordered w-full"
+              className="input input-bordered w-full text-base sm:text-sm min-h-11"
               placeholder="you@example.com"
               autoComplete="email"
             />
@@ -339,7 +336,7 @@ export default function EventTypePicker({
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="input input-bordered w-full"
+              className="input input-bordered w-full text-base sm:text-sm min-h-11"
               placeholder="Your name"
               autoComplete="name"
             />
@@ -351,7 +348,7 @@ export default function EventTypePicker({
             type="submit"
             disabled={isChecking}
             style={{ backgroundColor: brandColor, borderColor: brandColor }}
-            className="btn w-full text-white border-0"
+            className="btn w-full text-white border-0 min-h-12 text-base"
           >
             {isChecking ? "Checking…" : "Continue"}
           </button>
@@ -363,7 +360,7 @@ export default function EventTypePicker({
   // —— Step 3: booking widget ——
   if (phase === "book" && selected) {
     return (
-      <div ref={widgetRef} className="space-y-4 animate-appearFromRight scroll-mt-6">
+      <div ref={widgetRef} className="space-y-4 calio-step-in scroll-mt-6">
         <div className="flex flex-wrap items-center gap-3 text-sm">
           <button
             type="button"
@@ -455,9 +452,7 @@ export default function EventTypePicker({
 
         {et.description && (
           <div className="mb-3 rounded-lg bg-base-200/60 px-3 py-2">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-base-content/40 mb-0.5">
-              About this session
-            </p>
+
             <p className="text-sm text-base-content/70 leading-relaxed whitespace-pre-line line-clamp-4">
               {et.description}
             </p>
@@ -496,9 +491,8 @@ export default function EventTypePicker({
                 {et.usedSessions > 0 ? `${et.usedSessions} completed` : null}
               </p>
             )}
-            <p className="text-xs text-base-content/55 leading-relaxed">
-              Linked to your session package. Available count excludes upcoming
-              bookings. One session is deducted after the class starts.
+            <p className="text-xs text-base-content/55">
+              From your package · used after class starts
             </p>
           </div>
         )}
@@ -507,7 +501,7 @@ export default function EventTypePicker({
           <div className="rounded-lg bg-base-200/80 border border-base-300 px-3 py-2.5 space-y-1 mb-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs font-medium text-base-content/70">
-                No package required — book directly
+                No package needed
               </span>
               {priceLabel && (
                 <span className="text-sm font-bold text-base-content">
@@ -515,10 +509,7 @@ export default function EventTypePicker({
                 </span>
               )}
             </div>
-            <p className="text-xs text-base-content/55 leading-relaxed">
-              Pick a time → confirm your details. Payment or approval (if any)
-              will be handled by the host.
-            </p>
+            <p className="text-xs text-base-content/55">Book a time directly</p>
           </div>
         )}
 
@@ -527,17 +518,17 @@ export default function EventTypePicker({
             canOpenCourse ? "text-primary group-hover:underline" : "text-base-content/40"
           }`}
         >
-          {canOpenCourse ? "Select a time →" : "Select your timezone first"}
+          {canOpenCourse ? "Select time →" : "Set timezone first"}
         </p>
       </button>
     );
   }
 
   return (
-    <div className="rounded-2xl bg-base-200/40 p-5 sm:p-6 space-y-5 animate-opacity">
+    <div className="rounded-2xl bg-base-200/40 p-5 sm:p-6 space-y-5 calio-step-in">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         <div className="space-y-0.5">
-          <h2 className="text-lg font-bold">Your available courses</h2>
+          <h2 className="text-lg font-bold">Courses</h2>
           <p className="text-xs text-base-content/45">
             Signed in as{" "}
             <span className="font-medium text-base-content/70">{email}</span>
@@ -567,8 +558,7 @@ export default function EventTypePicker({
               Your timezone <span className="text-error">*</span>
             </p>
             <p className="text-xs text-base-content/50 mt-0.5">
-              Required before you can open a course. Times will be shown in this
-              timezone. Your choice is remembered on this device.
+              Required. Times use this zone (saved on this device).
             </p>
           </div>
         </div>

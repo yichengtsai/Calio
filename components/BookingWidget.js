@@ -357,7 +357,7 @@ export default function BookingWidget({
       }
       if (!data.hasPackage || !(data.remainingSessions > 0)) {
         setError(
-          "No sessions left for this course. Please contact the host to activate a package."
+          "No sessions left. Contact the host."
         );
         setRemainingSessions(0);
         return;
@@ -454,15 +454,39 @@ export default function BookingWidget({
     const end = new Date(new Date(selectedSlot).getTime() + eventType.duration * 60000);
 
     return (
-      <div className="rounded-2xl border border-base-300 bg-base-200 overflow-hidden animate-opacity">
-        <div className="p-10 text-center space-y-3 border-b border-base-300">
+      <div className="rounded-2xl border border-base-300 bg-base-200 overflow-hidden calio-step-in">
+        <div className="p-8 sm:p-10 text-center space-y-4 border-b border-base-300">
           <div className="w-12 h-12 rounded-full bg-success/15 text-success flex items-center justify-center mx-auto text-2xl animate-popup">
             ✓
           </div>
           <div>
             <h2 className="text-lg font-bold">You&apos;re booked!</h2>
             <p className="text-sm text-base-content/60 mt-1">
-              A confirmation has been sent to {email}
+              Confirmed. Details below.
+            </p>
+          </div>
+          {/* 明確引導去信箱看確認信 */}
+          <div className="rounded-xl border border-primary/25 bg-primary/5 px-4 py-3 text-left max-w-sm mx-auto">
+            <p className="text-sm font-semibold text-base-content">
+              Check your email
+            </p>
+            <p className="text-sm text-base-content/70 mt-1 break-all">
+              Sent to{" "}
+              <span className="font-medium text-base-content">{email}</span>
+            </p>
+            <p className="text-xs text-base-content/50 mt-2">
+              Includes details and reschedule / cancel. Check spam if missing.
+            </p>
+            <a
+              href="https://mail.google.com/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn btn-primary btn-sm mt-3 w-full"
+            >
+              Open Gmail
+            </a>
+            <p className="text-[11px] text-base-content/40 mt-1.5 text-center">
+              Other mail apps: open inbox and search.
             </p>
           </div>
         </div>
@@ -492,19 +516,24 @@ export default function BookingWidget({
           </button>
 
           {confirmedBooking && (
-            <div className="flex flex-col items-center gap-1.5">
-              <a
-                href={`/booking/${confirmedBooking.id}/reschedule?token=${confirmedBooking.cancelToken}`}
-                className="text-sm text-primary hover:underline underline-offset-2"
-              >
-                Reschedule this booking
-              </a>
-              <a
-                href={`/booking/${confirmedBooking.id}/cancel?token=${confirmedBooking.cancelToken}`}
-                className="text-sm text-base-content/50 hover:text-base-content underline underline-offset-2"
-              >
-                Cancel this booking
-              </a>
+            <div className="flex flex-col gap-2 pt-1">
+              <p className="text-xs text-base-content/45 text-center">
+                Change this booking?
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <a
+                  href={`/booking/${confirmedBooking.id}/reschedule?token=${confirmedBooking.cancelToken}`}
+                  className="btn btn-outline btn-sm"
+                >
+                  Reschedule
+                </a>
+                <a
+                  href={`/booking/${confirmedBooking.id}/cancel?token=${confirmedBooking.cancelToken}`}
+                  className="btn btn-ghost btn-sm text-error"
+                >
+                  Cancel
+                </a>
+              </div>
             </div>
           )}
         </div>
@@ -513,10 +542,10 @@ export default function BookingWidget({
   }
 
   return (
-    <div className="rounded-2xl border border-base-300 bg-base-200 overflow-hidden shadow-sm">
+    <div className="rounded-2xl border border-base-300 bg-base-200 overflow-hidden shadow-sm max-w-full">
       {/* Header */}
       <div className="h-1.5" style={{ backgroundColor: eventType.color }} />
-      <div className="px-6 py-6 border-b border-base-300">
+      <div className="px-4 py-5 sm:px-6 sm:py-6 border-b border-base-300">
         <div className="flex items-center gap-2.5 mb-4">
           {organizerImage ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -561,7 +590,7 @@ export default function BookingWidget({
       {step === "identify" && (
         <form onSubmit={handleIdentify} className="p-6 space-y-4">
           <p className="text-sm text-base-content/70">
-            Enter your email to check remaining sessions for this course.
+            Enter email to check sessions left.
           </p>
           <div>
             <label className="block text-sm font-medium text-base-content/80 mb-1">Email</label>
@@ -570,7 +599,7 @@ export default function BookingWidget({
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="input input-bordered w-full"
+              className="input input-bordered w-full text-base sm:text-sm min-h-11"
               placeholder="you@example.com"
             />
           </div>
@@ -580,7 +609,7 @@ export default function BookingWidget({
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="input input-bordered w-full"
+              className="input input-bordered w-full text-base sm:text-sm min-h-11"
             />
           </div>
           {error && <p className="text-sm text-error">{error}</p>}
@@ -588,7 +617,7 @@ export default function BookingWidget({
             type="submit"
             disabled={isCheckingPackage}
             style={{ backgroundColor: brandColor, borderColor: brandColor }}
-            className="btn w-full text-white"
+            className="btn w-full text-white min-h-12 text-base sticky bottom-3 z-10 shadow-lg sm:static sm:shadow-none"
           >
             {isCheckingPackage ? "Checking…" : "Continue"}
           </button>
@@ -597,14 +626,12 @@ export default function BookingWidget({
 
       {step === "select-time" && (
 
-        <div key="select-time" className="p-6 space-y-5 animate-opacity">
+        <div key="select-time" className="p-4 sm:p-6 space-y-4 sm:space-y-5 calio-step-in">
         {remainingSessions != null && (
-          <div className="mx-6 mt-4 rounded-lg bg-success/10 border border-success/30 px-3 py-2 text-sm text-success">
+          <div className="rounded-lg bg-success/10 border border-success/30 px-3 py-2 text-sm text-success">
             <strong>{remainingSessions}</strong> session
             {remainingSessions === 1 ? "" : "s"} available for this course
-            <span className="block text-xs text-success/70 mt-0.5 font-normal">
-              Includes upcoming bookings so you can&apos;t overbook.
-            </span>
+
           </div>
         )}
           {/* 預約人自己選時區:所有日期、時段都會依這裡自動換算顯示 */}
@@ -613,9 +640,7 @@ export default function BookingWidget({
               Timezone
             </label>
             <TimezoneSelect value={timezone} onChange={handleTimezoneChange} />
-            <p className="text-[11px] text-base-content/40 mt-1">
-              Pre-filled from your booking page. You can still change it here.
-            </p>
+            <p className="text-[11px] text-base-content/40 mt-1">Change if needed</p>
           </div>
 
           {/* 月曆 */}
@@ -633,7 +658,7 @@ export default function BookingWidget({
                         : { year: c.year, month: c.month - 1 }
                     )
                   }
-                  className="btn btn-ghost btn-xs btn-square disabled:opacity-20"
+                  className="btn btn-ghost btn-sm btn-square disabled:opacity-20 min-h-10 min-w-10"
                   aria-label="Previous month"
                 >
                   <ChevronIcon direction="left" />
@@ -648,7 +673,7 @@ export default function BookingWidget({
                         : { year: c.year, month: c.month + 1 }
                     )
                   }
-                  className="btn btn-ghost btn-xs btn-square disabled:opacity-20"
+                  className="btn btn-ghost btn-sm btn-square disabled:opacity-20 min-h-10 min-w-10"
                   aria-label="Next month"
                 >
                   <ChevronIcon direction="right" />
@@ -693,7 +718,7 @@ export default function BookingWidget({
                     style={{
                       ...(isSelected ? { backgroundColor: brandColor, color: "white" } : undefined),
                     }}
-                    className={`relative aspect-square rounded-lg text-sm flex flex-col items-center justify-center transition-all border ${
+                    className={`relative aspect-square min-h-[2.75rem] sm:min-h-0 rounded-lg text-sm flex flex-col items-center justify-center transition-all border ${
                       isSelected
                         ? "shadow-md font-semibold border-transparent"
                         : hasSlots
@@ -714,13 +739,13 @@ export default function BookingWidget({
 
           {/* 選定日期後,展開當天的時段 */}
           {selectedDate && (
-            <div className="animate-appearFromRight">
+            <div className="calio-step-in">
               <p className="text-xs font-semibold uppercase tracking-wide text-base-content/40 mb-2">
                 {weekdayShort(selectedDate)}, {monthYearLabel(selectedDate)} {dayOfMonth(selectedDate)}
               </p>
 
               {isLoadingSlots ? (
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {[...Array(6)].map((_, i) => (
                     <div key={i} className="h-10 rounded-lg bg-base-300 animate-pulse" />
                   ))}
@@ -730,7 +755,7 @@ export default function BookingWidget({
                   No open times on this day.
                 </p>
               ) : (
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {slots.map((slot, i) => (
                     <button
                       key={slot}
@@ -743,9 +768,8 @@ export default function BookingWidget({
                       style={{
                         borderColor: brandColor,
                         color: brandColor,
-                        animationDelay: `${Math.min(i, 12) * 30}ms`,
                       }}
-                      className="btn btn-outline btn-sm hover:text-white active:scale-95 transition-transform animate-opacity"
+                      className="btn btn-outline btn-sm min-h-11 sm:min-h-9 h-auto py-2.5 hover:text-white active:scale-95 transition-transform text-sm"
                       onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = brandColor)}
                       onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "")}
                     >
@@ -760,7 +784,7 @@ export default function BookingWidget({
       )}
 
       {step === "details" && selectedSlot && (
-        <form onSubmit={handleConfirm} key="details" className="p-6 space-y-4 animate-appearFromRight">
+        <form onSubmit={handleConfirm} key="details" className="p-4 sm:p-6 space-y-4 calio-step-in">
           <button
             type="button"
             onClick={() => setStep("select-time")}
@@ -784,7 +808,7 @@ export default function BookingWidget({
               required
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="input input-bordered w-full"
+              className="input input-bordered w-full text-base sm:text-sm min-h-11"
             />
           </div>
 
@@ -800,14 +824,14 @@ export default function BookingWidget({
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="input input-bordered w-full"
+              className="input input-bordered w-full text-base sm:text-sm min-h-11"
               readOnly={Boolean(eventType?.requiresSessionPackage && remainingSessions != null)}
             />
           </div>
 
           <div>
             <label className="block text-sm font-medium text-base-content/80 mb-1">
-              Anything you&apos;d like to share? (optional)
+              Note (optional)
             </label>
             <textarea
               value={notes}
@@ -823,7 +847,7 @@ export default function BookingWidget({
             type="submit"
             disabled={isSubmitting}
             style={{ backgroundColor: brandColor, borderColor: brandColor }}
-            className="btn w-full text-white"
+            className="btn w-full text-white min-h-12 text-base sticky bottom-3 z-10 shadow-lg sm:static sm:shadow-none"
           >
             {isSubmitting ? "Booking…" : "Confirm booking"}
           </button>
